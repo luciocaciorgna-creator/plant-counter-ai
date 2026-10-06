@@ -83,8 +83,8 @@ if uploaded_file is not None:
 
         x, y, w, h = cv2.boundingRect(c)
 
-        centro_x = x + (w / 2)
-        centro_y = y + (h / 2)
+        cx = x + (w / 2)
+        cy = y + (h / 2)
 
         cv2.rectangle(
             image,
@@ -108,8 +108,8 @@ if uploaded_file is not None:
             "id": detection_id,
             "x": x,
             "y": y,
-            "cx": centro_x,
-            "cy": centro_y,
+            "cx": cx,
+            "cy": cy,
             "w": w,
             "h": h,
             "area": round(area, 2)
@@ -136,7 +136,7 @@ if uploaded_file is not None:
         st.subheader("Imagen Procesada")
 
         st.info(
-            "Los números amarillos coinciden con el ID de la tabla."
+            "Los números amarillos coinciden con los IDs de la tabla."
         )
 
         st.image(
@@ -192,21 +192,37 @@ if uploaded_file is not None:
             conteo_final
         )
 
-        if len(plantas_validas) >= 2:
+        if len(plantas_validas) >= 4:
 
-            posiciones = sorted(
-                plantas_validas["cy"].tolist()
-            )
+            centro_imagen = image.shape[1] / 2
+
+            surco_izq = plantas_validas[
+                plantas_validas["cx"] < centro_imagen
+            ]
+
+            surco_der = plantas_validas[
+                plantas_validas["cx"] >= centro_imagen
+            ]
 
             distancias_px = []
 
-            for i in range(
-                len(posiciones) - 1
-            ):
-                distancias_px.append(
-                    posiciones[i + 1]
-                    - posiciones[i]
+            for surco in [surco_izq, surco_der]:
+
+                if len(surco) < 2:
+                    continue
+
+                posiciones = sorted(
+                    surco["cy"].tolist()
                 )
+
+                for i in range(
+                    len(posiciones) - 1
+                ):
+
+                    distancias_px.append(
+                        posiciones[i + 1]
+                        - posiciones[i]
+                    )
 
             if len(distancias_px) > 0:
 
@@ -235,9 +251,15 @@ if uploaded_file is not None:
                     media
                 ) * 100
 
-                densidad = (
+                densidad_m = (
                     100 /
                     media
+                )
+
+                densidad_ha = (
+                    densidad_m *
+                    10000 /
+                    (distancia_surco_cm / 100)
                 )
 
                 st.subheader(
@@ -250,7 +272,12 @@ if uploaded_file is not None:
 
                     st.metric(
                         "Densidad",
-                        f"{densidad:.2f} Plantas/M"
+                        f"{densidad_m:.2f} Plantas/M"
+                    )
+
+                    st.metric(
+                        "Densidad Ha",
+                        f"{densidad_ha:,.0f} Plantas/Ha"
                     )
 
                     st.metric(
