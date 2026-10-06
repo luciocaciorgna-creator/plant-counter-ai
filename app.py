@@ -13,7 +13,7 @@ st.subheader("Conteo automático de plantas")
 
 distancia_surco_cm = st.number_input(
     "Distancia entre surcos (cm)",
-    min_value=1.0,
+    min_value=10.0,
     value=52.0,
     step=1.0
 )
@@ -72,7 +72,6 @@ if uploaded_file is not None:
     )
 
     plants = []
-
     detection_id = 1
 
     for c in contours:
@@ -121,6 +120,7 @@ if uploaded_file is not None:
     col1, col2 = st.columns(2)
 
     with col1:
+
         st.subheader("Imagen Original")
 
         st.image(
@@ -162,8 +162,8 @@ if uploaded_file is not None:
 
         edited_df = st.data_editor(
             df,
-            use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            use_container_width=True
         )
 
         plantas_validas = edited_df[
@@ -194,11 +194,6 @@ if uploaded_file is not None:
 
         if len(plantas_validas) >= 2:
 
-            # escala estimada usando ancho de imagen
-            ancho_px = image.shape[1]
-
-            cm_por_px = distancia_surco_cm / (ancho_px * 0.5)
-
             posiciones = sorted(
                 plantas_validas["cy"].tolist()
             )
@@ -208,7 +203,6 @@ if uploaded_file is not None:
             for i in range(
                 len(posiciones) - 1
             ):
-
                 distancias_px.append(
                     posiciones[i + 1]
                     - posiciones[i]
@@ -216,12 +210,19 @@ if uploaded_file is not None:
 
             if len(distancias_px) > 0:
 
+                ancho_px = image.shape[1]
+
+                cm_por_px = (
+                    distancia_surco_cm /
+                    (ancho_px * 0.5)
+                )
+
                 distancias_cm = [
                     d * cm_por_px
                     for d in distancias_px
                 ]
 
-                promedio = np.mean(
+                media = np.mean(
                     distancias_cm
                 )
 
@@ -231,30 +232,43 @@ if uploaded_file is not None:
 
                 cv = (
                     desvio /
-                    promedio *
-                    100
+                    media
+                ) * 100
+
+                densidad = (
+                    100 /
+                    media
                 )
 
                 st.subheader(
-                    "📊 Estadísticas"
+                    "📊 Resultados"
                 )
 
-                c1, c2, c3 = st.columns(3)
+                c1, c2 = st.columns(2)
 
-                c1.metric(
-                    "Media (cm)",
-                    f"{promedio:.2f}"
-                )
+                with c1:
 
-                c2.metric(
-                    "Desvío Std (cm)",
-                    f"{desvio:.2f}"
-                )
+                    st.metric(
+                        "Densidad",
+                        f"{densidad:.2f} Plantas/M"
+                    )
 
-                c3.metric(
-                    "CV (%)",
-                    f"{cv:.2f}"
-                )
+                    st.metric(
+                        "Media",
+                        f"{media:.2f} cm"
+                    )
+
+                with c2:
+
+                    st.metric(
+                        "Desvío estándar",
+                        f"{desvio:.2f} cm"
+                    )
+
+                    st.metric(
+                        "CV",
+                        f"{cv:.2f}%"
+                    )
 
         st.subheader(
             "Detalle de detecciones"
