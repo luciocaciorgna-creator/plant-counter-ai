@@ -66,6 +66,8 @@ if uploaded_file is not None:
 
     plants = []
 
+    detection_id = 1
+
     for c in contours:
 
         area = cv2.contourArea(c)
@@ -83,7 +85,18 @@ if uploaded_file is not None:
             2
         )
 
+        cv2.putText(
+            image,
+            str(detection_id),
+            (x, y - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 0),
+            2
+        )
+
         plants.append({
+            "id": detection_id,
             "x": x,
             "y": y,
             "w": w,
@@ -91,10 +104,13 @@ if uploaded_file is not None:
             "area": round(area, 2)
         })
 
+        detection_id += 1
+
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("Imagen Original")
+
         st.image(
             cv2.cvtColor(
                 original,
@@ -105,6 +121,11 @@ if uploaded_file is not None:
 
     with col2:
         st.subheader("Imagen Procesada")
+
+        st.info(
+            "Los números amarillos coinciden con el ID de la tabla."
+        )
+
         st.image(
             cv2.cvtColor(
                 image,
@@ -118,11 +139,11 @@ if uploaded_file is not None:
         len(plants)
     )
 
-    st.subheader("Corrección de detecciones")
-
     df = pd.DataFrame(plants)
 
     if not df.empty:
+
+        st.subheader("Corrección de detecciones")
 
         df["usar"] = True
 
@@ -154,7 +175,7 @@ if uploaded_file is not None:
         )
 
         st.metric(
-            "🌱 Conteo Final",
+            "🌱 Conteo Final Corregido",
             conteo_final
         )
 
@@ -168,5 +189,5 @@ if uploaded_file is not None:
     else:
 
         st.warning(
-            "No se detectaron plantas."
+            "No se detectaron plantas en la imagen."
         )
