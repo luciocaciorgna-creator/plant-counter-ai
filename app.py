@@ -11,6 +11,13 @@ st.set_page_config(
 st.title("🌱 Plant Counter AI")
 st.subheader("Conteo automático de plantas")
 
+distancia_surco_cm = st.number_input(
+    "Distancia entre surcos (cm)",
+    min_value=1.0,
+    value=52.0,
+    step=1.0
+)
+
 uploaded_file = st.file_uploader(
     "Subí una foto",
     type=["jpg", "jpeg", "png"]
@@ -77,6 +84,9 @@ if uploaded_file is not None:
 
         x, y, w, h = cv2.boundingRect(c)
 
+        centro_x = x + (w / 2)
+        centro_y = y + (h / 2)
+
         cv2.rectangle(
             image,
             (x, y),
@@ -99,6 +109,8 @@ if uploaded_file is not None:
             "id": detection_id,
             "x": x,
             "y": y,
+            "cx": centro_x,
+            "cy": centro_y,
             "w": w,
             "h": h,
             "area": round(area, 2)
@@ -120,6 +132,7 @@ if uploaded_file is not None:
         )
 
     with col2:
+
         st.subheader("Imagen Procesada")
 
         st.info(
@@ -155,7 +168,7 @@ if uploaded_file is not None:
 
         plantas_validas = edited_df[
             edited_df["usar"] == True
-        ]
+        ].copy()
 
         st.metric(
             "✅ Plantas válidas",
@@ -179,7 +192,73 @@ if uploaded_file is not None:
             conteo_final
         )
 
-        st.subheader("Detalle de detecciones")
+        if len(plantas_validas) >= 2:
+
+            # escala estimada usando ancho de imagen
+            ancho_px = image.shape[1]
+
+            cm_por_px = distancia_surco_cm / (ancho_px * 0.5)
+
+            posiciones = sorted(
+                plantas_validas["cy"].tolist()
+            )
+
+            distancias_px = []
+
+            for i in range(
+                len(posiciones) - 1
+            ):
+
+                distancias_px.append(
+                    posiciones[i + 1]
+                    - posiciones[i]
+                )
+
+            if len(distancias_px) > 0:
+
+                distancias_cm = [
+                    d * cm_por_px
+                    for d in distancias_px
+                ]
+
+                promedio = np.mean(
+                    distancias_cm
+                )
+
+                desvio = np.std(
+                    distancias_cm
+                )
+
+                cv = (
+                    desvio /
+                    promedio *
+                    100
+                )
+
+                st.subheader(
+                    "📊 Estadísticas"
+                )
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "Media (cm)",
+                    f"{promedio:.2f}"
+                )
+
+                c2.metric(
+                    "Desvío Std (cm)",
+                    f"{desvio:.2f}"
+                )
+
+                c3.metric(
+                    "CV (%)",
+                    f"{cv:.2f}"
+                )
+
+        st.subheader(
+            "Detalle de detecciones"
+        )
 
         st.dataframe(
             plantas_validas,
@@ -189,5 +268,5 @@ if uploaded_file is not None:
     else:
 
         st.warning(
-            "No se detectaron plantas en la imagen."
+            "No se detectaron plantas."
         )
