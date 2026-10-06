@@ -9,6 +9,7 @@ st.set_page_config(
 )
 
 st.title("🌱 Plant Counter AI")
+st.subheader("Conteo automático de plantas")
 
 uploaded_file = st.file_uploader(
     "Subí una foto",
@@ -51,6 +52,12 @@ if uploaded_file:
         kernel
     )
 
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_CLOSE,
+        kernel
+    )
+
     contours, _ = cv2.findContours(
         mask,
         cv2.RETR_EXTERNAL,
@@ -89,23 +96,42 @@ if uploaded_file:
     with col1:
         st.subheader("Imagen Original")
         st.image(
-            cv2.cvtColor(original, cv2.COLOR_BGR2RGB),
+            cv2.cvtColor(
+                original,
+                cv2.COLOR_BGR2RGB
+            ),
             use_container_width=True
         )
 
     with col2:
         st.subheader("Imagen Procesada")
         st.image(
-            cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+            cv2.cvtColor(
+                image,
+                cv2.COLOR_BGR2RGB
+            ),
             use_container_width=True
         )
 
     st.metric(
-        "🌱 Plantas detectadas",
+        "🌱 Plantas detectadas por IA",
         len(plants)
     )
 
+    st.subheader("Detecciones detectadas")
+
     df = pd.DataFrame(plants)
 
-    st.subheader("Detecciones")
-    st.dataframe(df)
+    if len(df) > 0:
+
+        df["usar"] = True
+
+        edited_df = st.data_editor(
+            df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        plantas_validas = edited_df[
+            edited_df["usar"] == True
+   
