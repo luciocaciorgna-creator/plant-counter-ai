@@ -86,27 +86,26 @@ if uploaded_file:
 
     col1, col2 = st.columns(2)
 
-        with col1:
-    st.subheader("Imagen Original")
-    st.image(
-        cv2.cvtColor(original, cv2.COLOR_BGR2RGB),
-        use_container_width=True
+    with col1:
+        st.subheader("Imagen Original")
+        st.image(
+            cv2.cvtColor(original, cv2.COLOR_BGR2RGB),
+            use_container_width=True
+        )
+
+    with col2:
+        st.subheader("Imagen Procesada")
+        st.image(
+            cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+            use_container_width=True
+        )
+
+    st.metric(
+        "🌱 Plantas detectadas",
+        len(plants)
     )
 
-with col2:
-    st.subheader("Imagen Procesada")
-    st.image(
-        cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
-        use_container_width=True
-    )
+    df = pd.DataFrame(plants)
 
-st.metric(
-    "🌱 Plantas detectadas",
-    len(plants)
-)
-
-df = pd.DataFrame(plants)
-
-st.subheader("Detecciones")
-
-st.dataframe(df)
+    st.subheader("Detecciones")
+    st.dataframe(df)
