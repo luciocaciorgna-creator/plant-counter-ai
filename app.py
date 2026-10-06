@@ -16,7 +16,7 @@ uploaded_file = st.file_uploader(
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file:
+if uploaded_file is not None:
 
     file_bytes = np.asarray(
         bytearray(uploaded_file.read()),
@@ -88,50 +88,4 @@ if uploaded_file:
             "y": y,
             "w": w,
             "h": h,
-            "area": round(area, 2)
-        })
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Imagen Original")
-        st.image(
-            cv2.cvtColor(
-                original,
-                cv2.COLOR_BGR2RGB
-            ),
-            use_container_width=True
-        )
-
-    with col2:
-        st.subheader("Imagen Procesada")
-        st.image(
-            cv2.cvtColor(
-                image,
-                cv2.COLOR_BGR2RGB
-            ),
-            use_container_width=True
-        )
-
-    st.metric(
-        "🌱 Plantas detectadas por IA",
-        len(plants)
-    )
-
-    st.subheader("Detecciones detectadas")
-
-    df = pd.DataFrame(plants)
-
-    if len(df) > 0:
-
-        df["usar"] = True
-
-        edited_df = st.data_editor(
-            df,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        plantas_validas = edited_df[
-            edited_df["usar"] == True
-   
+            "area": round(area
