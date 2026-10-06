@@ -88,4 +88,85 @@ if uploaded_file is not None:
             "y": y,
             "w": w,
             "h": h,
-            "area": round(area
+            "area": round(area, 2)
+        })
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Imagen Original")
+        st.image(
+            cv2.cvtColor(
+                original,
+                cv2.COLOR_BGR2RGB
+            ),
+            use_container_width=True
+        )
+
+    with col2:
+        st.subheader("Imagen Procesada")
+        st.image(
+            cv2.cvtColor(
+                image,
+                cv2.COLOR_BGR2RGB
+            ),
+            use_container_width=True
+        )
+
+    st.metric(
+        "🌱 Plantas detectadas por IA",
+        len(plants)
+    )
+
+    st.subheader("Corrección de detecciones")
+
+    df = pd.DataFrame(plants)
+
+    if not df.empty:
+
+        df["usar"] = True
+
+        edited_df = st.data_editor(
+            df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        plantas_validas = edited_df[
+            edited_df["usar"] == True
+        ]
+
+        st.metric(
+            "✅ Plantas válidas",
+            len(plantas_validas)
+        )
+
+        plantas_agregadas = st.number_input(
+            "Agregar plantas faltantes",
+            min_value=0,
+            max_value=100,
+            value=0
+        )
+
+        conteo_final = (
+            len(plantas_validas)
+            + plantas_agregadas
+        )
+
+        st.metric(
+            "🌱 Conteo Final",
+            conteo_final
+        )
+
+        st.subheader("Detalle de detecciones")
+
+        st.dataframe(
+            plantas_validas,
+            use_container_width=True
+        )
+
+    else:
+
+        st.warning(
+            "No se detectaron plantas."
+        )
