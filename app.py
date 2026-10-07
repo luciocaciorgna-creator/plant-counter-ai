@@ -92,21 +92,23 @@ with st.sidebar:
     n_surcos = int(st.number_input("Surcos en la foto", 2, 6, 2, 1))
     objetivo = st.number_input("Densidad objetivo (pl/ha, opcional)", 0, 300000, 0, 1000)
     st.header("Ajustes")
+
     mostrar_surcos = st.checkbox(
-    "Mostrar líneas de surco",
-    value=True
-)
+        "Mostrar líneas de surco",
+        value=True
+    )
 
-mostrar_centros = st.checkbox(
-    "Mostrar centros",
-    value=True
-)
+    mostrar_centros = st.checkbox(
+        "Mostrar centros",
+        value=True
+    )
 
-mostrar_rectangulos = st.checkbox(
-    "Mostrar rectángulos",
-    value=True
-)
-        sensibilidad = int(
+    mostrar_rectangulos = st.checkbox(
+        "Mostrar rectángulos",
+        value=True
+    )
+
+    sensibilidad = int(
         st.slider(
             "Sensibilidad de detección",
             15,
@@ -115,9 +117,12 @@ mostrar_rectangulos = st.checkbox(
             help="Más bajo detecta más verde (más plantas, más falsos). Más alto es más exigente."
         )
     )
-    inclinada = st.checkbox("Fotos inclinadas (corregir perspectiva)", False,
-                            help="Inclina las líneas de surco siguiendo las plantas y corrige la escala. "
-                                 "Con las fotos derechas, dejalo apagado.")
+
+    inclinada = st.checkbox(
+        "Fotos inclinadas (corregir perspectiva)",
+        False,
+        help="Inclina las líneas de surco siguiendo las plantas y corrige la escala. Con las fotos derechas, dejalo apagado."
+    )
     largo_real = st.number_input("Largo real de la foto (cm, opcional)", 0, 500, 0, 1,
                                  help="Si sabés cuántos cm de surco entran en tus fotos (medido una vez con cinta, "
                                       "a la altura a la que sacás siempre), cargalo y la densidad sale exacta. "
