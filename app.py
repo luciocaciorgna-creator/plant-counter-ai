@@ -159,6 +159,8 @@ def analizar(i, archivo):
                                   float(largo_real) if largo_real > 0 else None)
       if mostrar_detecciones:
 
+    if mostrar_detecciones:
+
     out = pl.dibujar(
         img,
         todas,
@@ -167,6 +169,9 @@ def analizar(i, archivo):
         quitadas
     )
 
+else:
+
+    out = img.copy()
 else:
 
     out = img.copy()
