@@ -152,6 +152,21 @@ def analizar(f):
     return m
 
 
+def recorte(pil, zoom, px, py):
+    """Devuelve (imagen recortada y ampliada, (x0, y0, ancho, alto) del recorte en píxeles de la foto)."""
+    W, H = pil.size
+    if zoom <= 1:
+        return pil, (0, 0, W, H)
+    cw, ch = W / zoom, H / zoom
+    x0, y0 = int((W - cw) * px / 100), int((H - ch) * py / 100)
+    x1, y1 = min(W, int(x0 + cw)), min(H, int(y0 + ch))
+    vista = pil.crop((x0, y0, x1, y1))
+    esc = min(3.0, 1100 / vista.width)
+    if esc > 1:
+        vista = vista.resize((int(vista.width * esc), int(vista.height * esc)), Image.LANCZOS)
+    return vista, (x0, y0, x1 - x0, y1 - y0)
+
+
 fuentes = fuentes_del_lote()
 if not fuentes:
     st.info("Subí una o más fotos para comenzar. Lo ideal: fotos paralelas al suelo, con 2 surcos, "
@@ -245,28 +260,39 @@ for k, (tab, m) in enumerate(zip(tabs, muestras)):
         v_dis = t3.toggle("Distancias", True, key=f"vd_{fid}")
         modo = t4.toggle("Agregar planta (tocá el tallo)", key=f"tg_{fid}")
 
+        z1, z2, z3, z4 = st.columns(4)
+        zoom = z1.slider("🔍 Zoom", 1.0, 6.0, 1.0, 0.5, key=f"zm_{fid}")
+        px = z2.slider("Mover ← →", 0, 100, 50, key=f"px_{fid}", disabled=zoom <= 1)
+        py = z3.slider("Mover ↑ ↓", 0, 100, 50, key=f"py_{fid}", disabled=zoom <= 1)
+        ancho = z4.slider("Tamaño de la foto", 350, 1000, 650, 50, key=f"an_{fid}")
+
         orig = Image.fromarray(cv2.cvtColor(m["img"], cv2.COLOR_BGR2RGB))
         if m["tot"]:
             proc = Image.fromarray(cv2.cvtColor(
                 pl.dibujar(m["img"], todas, lineas, surcos_dib, quitadas, v_lin, v_caj, v_dis), cv2.COLOR_BGR2RGB))
         else:
             proc = orig
+        orig_v, _ = recorte(orig, zoom, px, py)
+        proc_v, (x0, y0, cw, ch) = recorte(proc, zoom, px, py)
+        if zoom > 1:
+            st.caption(f"Zoom {zoom:g}x: mostrando una parte de la foto. Con 'Agregar planta' prendido, "
+                       "el toque se ubica sobre la foto completa.")
 
         click = None
         if vista == "Original":
-            st.image(orig, width=650)
+            st.image(orig_v, width=ancho)
         elif vista == "Procesada":
-            click = streamlit_image_coordinates(proc, key=f"img_{fid}", width=650)
+            click = streamlit_image_coordinates(proc_v, key=f"img_{fid}", width=ancho)
         else:
             ia, ib = st.columns(2)
             with ia:
-                st.image(orig, caption="Original", width=480)
+                st.image(orig_v, caption="Original", width=min(ancho, 480))
             with ib:
-                click = streamlit_image_coordinates(proc, key=f"img_{fid}", width=480)
+                click = streamlit_image_coordinates(proc_v, key=f"img_{fid}", width=min(ancho, 480))
         if modo and click and click.get("unix_time") != st.session_state.get(f"uc_{fid}"):
             st.session_state[f"uc_{fid}"] = click["unix_time"]
             st.session_state.setdefault(m["akey"], []).append(
-                (click["x"] * m["w"] / click["width"], click["y"] * m["h"] / click["height"]))
+                (x0 + click["x"] * cw / click["width"], y0 + click["y"] * ch / click["height"]))
             st.rerun()
 
         col_ctl, col_res = st.columns([3, 2])
