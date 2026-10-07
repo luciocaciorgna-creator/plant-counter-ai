@@ -1,4 +1,5 @@
 import hashlib
+import math
 import time
 
 import cv2
@@ -6,10 +7,10 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from PIL import Image
-from streamlit_image_coordinates import streamlit_image_coordinates
 
 import plant_logic as pl
 import storage as sto
+import viewer as vw
 
 st.set_page_config(page_title="Plant Counter AI V1.2", layout="wide")
 st.title("🌱 Plant Counter AI")
@@ -140,7 +141,7 @@ def analizar(f):
     activas = [p for k, p in enumerate(todas) if k not in quitadas]
     agregadas = [[round(x, 1), round(y, 1)] for x, y in st.session_state.get(akey, [])]
     m = {**f, "img": img, "h": h, "w": w, "ids": ids_validos, "qkey": qkey, "akey": akey,
-         "quitar": sorted(quitar_ids), "agregadas": agregadas, "surcos": None, "tot": None,
+         "quitar": sorted(quitar_ids), "agregadas": agregadas, "ndet": len(detectadas), "surcos": None, "tot": None,
          "draw": (todas, lineas, quitadas)}
     if len(activas) >= 2:
         m["surcos"], m["tot"] = pl.calcular(activas, lineas, h, w, float(distancia_surco_cm),
@@ -150,21 +151,6 @@ def analizar(f):
                           or agregadas != f["meta"].get("agregadas", [])):
         sto.actualizar_muestra(est, lote, f["sid"], {"quitar": m["quitar"], "agregadas": agregadas})
     return m
-
-
-def recorte(pil, zoom, px, py):
-    """Devuelve (imagen recortada y ampliada, (x0, y0, ancho, alto) del recorte en píxeles de la foto)."""
-    W, H = pil.size
-    if zoom <= 1:
-        return pil, (0, 0, W, H)
-    cw, ch = W / zoom, H / zoom
-    x0, y0 = int((W - cw) * px / 100), int((H - ch) * py / 100)
-    x1, y1 = min(W, int(x0 + cw)), min(H, int(y0 + ch))
-    vista = pil.crop((x0, y0, x1, y1))
-    esc = min(3.0, 1100 / vista.width)
-    if esc > 1:
-        vista = vista.resize((int(vista.width * esc), int(vista.height * esc)), Image.LANCZOS)
-    return vista, (x0, y0, x1 - x0, y1 - y0)
 
 
 fuentes = fuentes_del_lote()
@@ -247,92 +233,92 @@ else:
 
 # ============================================================== detalle por muestra
 st.header("🔍 Detalle por muestra")
-tabs = st.tabs([f"Muestra {k + 1}" + ("" if m["guardada"] else " •") for k, m in enumerate(muestras)])
-for k, (tab, m) in enumerate(zip(tabs, muestras)):
-    with tab:
-        fid = m["fid"]
-        todas, lineas, quitadas = m["draw"]
-        surcos_dib = m["surcos"] or []
-        vista = st.radio("Vista", ["Procesada", "Original", "Lado a lado"], horizontal=True, key=f"vista_{fid}")
-        t1, t2, t3, t4 = st.columns(4)
-        v_lin = t1.toggle("Líneas de surco", True, key=f"vl_{fid}")
-        v_caj = t2.toggle("Cajas y puntos", True, key=f"vc_{fid}")
-        v_dis = t3.toggle("Distancias", True, key=f"vd_{fid}")
-        modo = t4.toggle("Agregar planta (tocá el tallo)", key=f"tg_{fid}")
+fids = [m["fid"] for m in muestras]
+nombres = {m["fid"]: f"{k + 1}. {m['nombre']}" + ("" if m["guardada"] else " (sin guardar)")
+           for k, m in enumerate(muestras)}
+skey = f"selm_{est}_{lote}"
+if st.session_state.get(skey) not in fids:
+    st.session_state.pop(skey, None)
+fid_sel = st.selectbox("Elegí la muestra", fids, format_func=lambda f: nombres[f], key=skey)
+m = muestras[fids.index(fid_sel)]
+fid = m["fid"]
+todas, lineas, quitadas = m["draw"]
+surcos_dib = m["surcos"] or []
 
-        z1, z2, z3, z4 = st.columns(4)
-        zoom = z1.slider("🔍 Zoom", 1.0, 6.0, 1.0, 0.5, key=f"zm_{fid}")
-        px = z2.slider("Mover ← →", 0, 100, 50, key=f"px_{fid}", disabled=zoom <= 1)
-        py = z3.slider("Mover ↑ ↓", 0, 100, 50, key=f"py_{fid}", disabled=zoom <= 1)
-        ancho = z4.slider("Tamaño de la foto", 350, 1000, 650, 50, key=f"an_{fid}")
+c_a, c_b, c_c, c_d = st.columns(4)
+v_lin = c_a.toggle("Líneas de surco", True, key=f"vl_{fid}")
+v_caj = c_b.toggle("Cajas y puntos", True, key=f"vc_{fid}")
+v_dis = c_c.toggle("Distancias", True, key=f"vd_{fid}")
+alto = c_d.slider("Alto del visor", 350, 900, 560, 50, key=f"alto_{fid}")
+modo_tap = st.radio("Al tocar la foto:", ["Solo mover y hacer zoom", "Agregar planta", "Quitar planta"],
+                    horizontal=True, key=f"tap_{fid}",
+                    help="Con 'Solo mover y hacer zoom' los toques no cambian nada.")
+st.caption("Pellizcá con dos dedos para hacer zoom y arrastrá para moverte (o usá ＋ y －). "
+           "Con zoom 1x un dedo desplaza la página. El botón 👁 alterna entre procesada y original "
+           "en la misma posición, para comparar.")
 
-        orig = Image.fromarray(cv2.cvtColor(m["img"], cv2.COLOR_BGR2RGB))
-        if m["tot"]:
-            proc = Image.fromarray(cv2.cvtColor(
-                pl.dibujar(m["img"], todas, lineas, surcos_dib, quitadas, v_lin, v_caj, v_dis), cv2.COLOR_BGR2RGB))
-        else:
-            proc = orig
-        orig_v, _ = recorte(orig, zoom, px, py)
-        proc_v, (x0, y0, cw, ch) = recorte(proc, zoom, px, py)
-        if zoom > 1:
-            st.caption(f"Zoom {zoom:g}x: mostrando una parte de la foto. Con 'Agregar planta' prendido, "
-                       "el toque se ubica sobre la foto completa.")
-
-        click = None
-        if vista == "Original":
-            st.image(orig_v, width=ancho)
-        elif vista == "Procesada":
-            click = streamlit_image_coordinates(proc_v, key=f"img_{fid}", width=ancho)
-        else:
-            ia, ib = st.columns(2)
-            with ia:
-                st.image(orig_v, caption="Original", width=min(ancho, 480))
-            with ib:
-                click = streamlit_image_coordinates(proc_v, key=f"img_{fid}", width=min(ancho, 480))
-        if modo and click and click.get("unix_time") != st.session_state.get(f"uc_{fid}"):
-            st.session_state[f"uc_{fid}"] = click["unix_time"]
-            st.session_state.setdefault(m["akey"], []).append(
-                (x0 + click["x"] * cw / click["width"], y0 + click["y"] * ch / click["height"]))
-            st.rerun()
-
-        col_ctl, col_res = st.columns([3, 2])
-        with col_ctl:
-            st.multiselect("Quitar plantas (por número)", m["ids"], key=m["qkey"],
-                           help="Los números aparecen sobre cada planta si 'Cajas y puntos' está prendido.")
-            if st.session_state.get(m["akey"]) and st.button("Deshacer última planta agregada", key=f"un_{fid}"):
-                st.session_state[m["akey"]].pop()
+if m["tot"]:
+    proc_bgr = pl.dibujar(m["img"], todas, lineas, surcos_dib, quitadas, v_lin, v_caj, v_dis)
+else:
+    proc_bgr = m["img"]
+click = vw.foto_viewer(m["img"], proc_bgr, alto, modo_tap != "Solo mover y hacer zoom", fid, f"vw_{fid}")
+if click and click.get("t") != st.session_state.get(f"uc_{fid}"):
+    st.session_state[f"uc_{fid}"] = click.get("t")
+    cx, cy = float(click["x"]), float(click["y"])
+    if modo_tap == "Agregar planta":
+        st.session_state.setdefault(m["akey"], []).append((cx, cy))
+        st.rerun()
+    elif modo_tap == "Quitar planta":
+        cand = [(math.hypot(p["x"] - cx, p["y"] - cy), k) for k, p in enumerate(todas) if k not in quitadas]
+        if cand:
+            d, k = min(cand)
+            if d <= 0.06 * m["w"]:
+                if k < m["ndet"]:
+                    st.session_state[m["qkey"]] = sorted(set(st.session_state.get(m["qkey"], [])) | {k + 1})
+                else:
+                    st.session_state[m["akey"]].pop(k - m["ndet"])
                 st.rerun()
-            if m["guardada"]:
-                st.caption(f"Guardada el {m['meta'].get('fecha', '-')} (sensibilidad {m['sens']}). "
-                           "Las correcciones se guardan solas.")
-                if st.session_state.get(f"del_{fid}"):
-                    if st.button("⚠️ Confirmar: eliminar esta muestra", key=f"dc_{fid}"):
-                        sto.eliminar_muestra(est, lote, m["sid"])
-                        st.session_state.pop(f"del_{fid}", None)
-                        st.rerun()
-                elif st.button("🗑️ Eliminar muestra", key=f"dl_{fid}"):
-                    st.session_state[f"del_{fid}"] = True
-                    st.rerun()
             else:
-                st.caption("Muestra sin guardar: usá el botón de guardar de arriba.")
-        with col_res:
-            t = m["tot"]
-            if not t:
-                st.warning("Menos de 2 plantas en esta muestra.")
-                continue
-            a, b = st.columns(2)
-            a.metric("Densidad", f"{t['pl_m']:.2f} pl/m")
-            b.metric("Densidad", f"{t['pl_ha']:,.0f} pl/ha")
-            a.metric("Media entre plantas", f"{t['media_cm']:.1f} cm")
-            b.metric("Desvío", f"{t['desvio_cm']:.1f} cm")
-            a.metric("CV", f"{t['cv']:.1f} % {pl.semaforo(t['cv'], 22, 30)}")
-            b.metric("Plantas", t["plantas"])
-            st.caption(f"Largo de surco en la foto: {t['largo_cm']:.0f} cm"
-                       + (f" (cargado por vos; la app estimaba {t['largo_estimado_cm']:.0f} cm)"
-                          if largo_real > 0 else " (estimado)")
-                       + f". Posibles dobles: {t['dobles']}. Baches: {t['baches']}.")
-            filas_s = [{"Surco": str(s["surco"]), "Plantas": s["plantas"], "pl/m": round(s["pl_m"], 2),
-                        "pl/ha": round(s["pl_ha"]), "Media (cm)": round(s["media_cm"], 1),
-                        "Desvío (cm)": round(s["desvio_cm"], 1), "CV (%)": round(s["cv"], 1)}
-                       for s in m["surcos"]]
-            st.dataframe(pd.DataFrame(filas_s), hide_index=True)
+                st.toast("No hay ninguna planta cerca de ese punto.")
+
+col_ctl, col_res = st.columns([3, 2])
+with col_ctl:
+    st.multiselect("Quitar plantas (por número)", m["ids"], key=m["qkey"],
+                   help="Los números aparecen sobre cada planta si 'Cajas y puntos' está prendido.")
+    if st.session_state.get(m["akey"]) and st.button("Deshacer última planta agregada", key=f"un_{fid}"):
+        st.session_state[m["akey"]].pop()
+        st.rerun()
+    if m["guardada"]:
+        st.caption(f"Guardada el {m['meta'].get('fecha', '-')} (sensibilidad {m['sens']}). "
+                   "Las correcciones se guardan solas.")
+        if st.session_state.get(f"del_{fid}"):
+            if st.button("⚠️ Confirmar: eliminar esta muestra", key=f"dc_{fid}"):
+                sto.eliminar_muestra(est, lote, m["sid"])
+                st.session_state.pop(f"del_{fid}", None)
+                st.rerun()
+        elif st.button("🗑️ Eliminar muestra", key=f"dl_{fid}"):
+            st.session_state[f"del_{fid}"] = True
+            st.rerun()
+    else:
+        st.caption("Muestra sin guardar: usá el botón de guardar de arriba.")
+with col_res:
+    t = m["tot"]
+    if not t:
+        st.warning("Menos de 2 plantas en esta muestra.")
+    else:
+        a, b = st.columns(2)
+        a.metric("Densidad", f"{t['pl_m']:.2f} pl/m")
+        b.metric("Densidad", f"{t['pl_ha']:,.0f} pl/ha")
+        a.metric("Media entre plantas", f"{t['media_cm']:.1f} cm")
+        b.metric("Desvío", f"{t['desvio_cm']:.1f} cm")
+        a.metric("CV", f"{t['cv']:.1f} % {pl.semaforo(t['cv'], 22, 30)}")
+        b.metric("Plantas", t["plantas"])
+        st.caption(f"Largo de surco en la foto: {t['largo_cm']:.0f} cm"
+                   + (f" (cargado por vos; la app estimaba {t['largo_estimado_cm']:.0f} cm)"
+                      if largo_real > 0 else " (estimado)")
+                   + f". Posibles dobles: {t['dobles']}. Baches: {t['baches']}.")
+        filas_s = [{"Surco": str(s_["surco"]), "Plantas": s_["plantas"], "pl/m": round(s_["pl_m"], 2),
+                    "pl/ha": round(s_["pl_ha"]), "Media (cm)": round(s_["media_cm"], 1),
+                    "Desvío (cm)": round(s_["desvio_cm"], 1), "CV (%)": round(s_["cv"], 1)}
+                   for s_ in m["surcos"]]
+        st.dataframe(pd.DataFrame(filas_s), hide_index=True)
