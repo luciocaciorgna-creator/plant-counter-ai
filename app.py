@@ -3,6 +3,8 @@ import hashlib
 import cv2
 import numpy as np
 import pandas as pd
+import json
+from pathlib import Path
 import streamlit as st
 from PIL import Image
 from streamlit_image_coordinates import streamlit_image_coordinates
@@ -10,8 +12,77 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 import plant_logic as pl
 
 st.set_page_config(page_title="Plant Counter AI V1.1", layout="wide")
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
 st.title("🌱 Plant Counter AI")
 st.subheader("Stand de plantas")
+
+if "establecimientos" not in st.session_state:
+
+    st.session_state.establecimientos = {
+        "Establecimiento 1": [
+            "Lote 1"
+        ]
+    }
+
+st.sidebar.header("🏢 Gestión")
+
+establecimiento = st.sidebar.selectbox(
+    "Establecimiento",
+    list(
+        st.session_state.establecimientos.keys()
+    )
+)
+
+nuevo_est = st.sidebar.text_input(
+    "Nuevo establecimiento"
+)
+
+if st.sidebar.button(
+    "Agregar establecimiento"
+):
+
+    if (
+        nuevo_est
+        and
+        nuevo_est
+        not in st.session_state.establecimientos
+    ):
+
+        st.session_state.establecimientos[
+            nuevo_est
+        ] = []
+
+        st.rerun()
+
+lote = st.sidebar.selectbox(
+    "Lote",
+    st.session_state.establecimientos[
+        establecimiento
+    ]
+)
+
+nuevo_lote = st.sidebar.text_input(
+    "Nuevo lote"
+)
+
+if st.sidebar.button(
+    "Agregar lote"
+):
+
+    if nuevo_lote:
+
+        st.session_state.establecimientos[
+            establecimiento
+        ].append(
+            nuevo_lote
+        )
+
+        st.rerun()
+
+st.info(
+    f"🏢 {establecimiento} | 📍 {lote}"
+)
 
 # ------------------------------------------------------------------ opciones
 with st.sidebar:
