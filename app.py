@@ -235,10 +235,17 @@ if uploaded_file is not None:
 
                 ancho_px = image.shape[1]
 
-                cm_por_px = (
-                    distancia_surco_cm /
-                    (ancho_px * 0.5)
-                )
+                x_prom_izq = surco_izq["cx"].mean()
+x_prom_der = surco_der["cx"].mean()
+
+distancia_surcos_px = abs(
+    x_prom_der - x_prom_izq
+)
+
+cm_por_px = (
+    distancia_surco_cm /
+    distancia_surcos_px
+)	
 
                 distancias_cm = [
                     d * cm_por_px
@@ -258,9 +265,12 @@ if uploaded_file is not None:
                     media
                 ) * 100
 
-                densidad_m = (
-                    100 / media
-                )
+               densidad_m = (
+    conteo_final /
+    ((max(plantas_validas["cy"]) -
+      min(plantas_validas["cy"]))
+     * cm_por_px / 100)
+)
 
                 densidad_ha = (
                     densidad_m *
