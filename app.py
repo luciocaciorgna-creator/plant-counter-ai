@@ -23,7 +23,7 @@ uploaded_file = st.file_uploader(
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file is not None:
+if uploaded_file:
 
     file_bytes = np.asarray(
         bytearray(uploaded_file.read()),
@@ -106,11 +106,9 @@ if uploaded_file is not None:
 
         plants.append({
             "id": detection_id,
-            "x": x,
-            "y": y,
             "cx": cx,
             "cy": cy,
-            "area": round(area, 2)
+            "area": area
         })
 
         detection_id += 1
@@ -141,25 +139,18 @@ if uploaded_file is not None:
             use_container_width=True
         )
 
-    st.metric(
-        "Plantas detectadas",
-        len(plants)
-    )
-
     df = pd.DataFrame(plants)
 
     if not df.empty:
 
         df["usar"] = True
 
-        st.subheader(
-            "Corrección manual"
-        )
+        st.subheader("Corrección manual")
 
         edited_df = st.data_editor(
             df,
-            use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            use_container_width=True
         )
 
         plantas_validas = edited_df[
@@ -171,11 +162,11 @@ if uploaded_file is not None:
         )
 
         st.metric(
-            "Conteo final",
+            "🌱 Conteo Final",
             conteo_final
         )
 
-        if len(plantas_validas) >= 4:
+        if conteo_final >= 4:
 
             centro_imagen = (
                 image.shape[1] / 2
@@ -206,14 +197,8 @@ if uploaded_file is not None:
                 )
 
                 distancia_surcos_px = abs(
-                    x_prom_der
-                    - x_prom_izq
-                )
-
-                cm_por_px = (
-                    distancia_surco_cm
-                    /
-                    distancia_surcos_px
+                    x_prom_der -
+                    x_prom_izq
                 )
 
                 distancias_cm = []
@@ -231,109 +216,6 @@ if uploaded_file is not None:
                         len(posiciones) - 1
                     ):
 
-                        distancia = (
+                        distancia_px = (
                             posiciones[i + 1]
-                            -
-                            posiciones[i]
-                        )
-
-                        distancias_cm.append(
-                            distancia
-                            * cm_por_px
-                        )
-
-                if len(distancias_cm) > 0:
-
-                    media = np.mean(
-                        distancias_cm
-                    )
-
-                    desvio = np.std(
-                        distancias_cm
-                    )
-
-                    cv = (
-                        desvio
-                        /
-                        media
-                    ) * 100
-
-                    longitud_px = (
-                        max(
-                            plantas_validas["cy"]
-                        )
-                        -
-                        min(
-                            plantas_validas["cy"]
-                        )
-                    )
-
-                   longitud_m = (
-    longitud_px /
-    distancia_surcos_px
-) * (
-    distancia_surco_cm / 100
-)
-
-                    if longitud_m > 0:
-
-                        densidad_m = (
-                            conteo_final
-                            /
-                            longitud_m
-                        )
-
-                        densidad_ha = (
-                            densidad_m
-                            *
-                            10000
-                            /
-                            (
-                                distancia_surco_cm
-                                / 100
-                            )
-                        )
-
-                        st.subheader(
-                            "📊 Resultados"
-                        )
-
-                        c1, c2 = st.columns(2)
-
-                        with c1:
-
-                            st.metric(
-                                "Densidad",
-                                f"{densidad_m:.2f} pl/m"
-                            )
-
-                            st.metric(
-                                "Densidad Ha",
-                                f"{densidad_ha:,.0f}"
-                            )
-
-                        with c2:
-
-                            st.metric(
-                                "Media",
-                                f"{media:.2f} cm"
-                            )
-
-                            st.metric(
-                                "Desvío Std",
-                                f"{desvio:.2f} cm"
-                            )
-
-                            st.metric(
-                                "CV",
-                                f"{cv:.2f}%"
-                            )
-
-        st.subheader(
-            "Detalle detecciones"
-        )
-
-        st.dataframe(
-            plantas_validas,
-            use_container_width=True
-        )
+                            - 
