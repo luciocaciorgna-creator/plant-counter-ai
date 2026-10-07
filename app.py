@@ -4,12 +4,12 @@ import numpy as np
 import pandas as pd
 
 st.set_page_config(
-    page_title="Plant Counter AI",
+    page_title="Plant Counter AI V0.8",
     layout="wide"
 )
 
 st.title("🌱 Plant Counter AI")
-st.subheader("Conteo automático de plantas")
+st.subheader("Stand de plantas")
 
 distancia_surco_cm = st.number_input(
     "Distancia entre surcos (cm)",
@@ -23,7 +23,7 @@ uploaded_file = st.file_uploader(
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file:
+if uploaded_file is not None:
 
     file_bytes = np.asarray(
         bytearray(uploaded_file.read()),
@@ -72,7 +72,6 @@ if uploaded_file:
     )
 
     plants = []
-    detection_id = 1
 
     for c in contours:
 
@@ -86,247 +85,314 @@ if uploaded_file:
         cx = x + w / 2
         cy = y + h / 2
 
-        cv2.rectangle(
-            image,
-            (x, y),
-            (x + w, y + h),
-            (0, 0, 255),
-            2
-        )
-
-        cv2.putText(
-            image,
-            str(detection_id),
-            (x, y - 5),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 0),
-            2
-        )
-
         plants.append({
-            "id": detection_id,
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h,
             "cx": cx,
             "cy": cy,
             "area": area
         })
 
-        detection_id += 1
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.image(
-            cv2.cvtColor(
-                original,
-                cv2.COLOR_BGR2RGB
-            ),
-            caption="Original",
-            use_container_width=True
-        )
-
-    with col2:
-        st.image(
-            cv2.cvtColor(
-                image,
-                cv2.COLOR_BGR2RGB
-            ),
-            caption="Procesada",
-            use_container_width=True
-        )
-
     df = pd.DataFrame(plants)
 
     if not df.empty:
 
-        df["usar"] = True
-
-        st.subheader("Corrección manual")
-
-        df = st.data_editor(
-            df,
-            use_container_width=True,
-            hide_index=True
+        xs = sorted(
+            df["cx"].tolist()
         )
 
-        plantas_validas = df[
-            df["usar"] == True
-        ].copy()
+        mitad = len(xs) // 2
 
-        conteo = len(plantas_validas)
-
-        st.metric(
-            "🌱 Plantas detectadas",
-            conteo
+        centro_surco_1 = np.mean(
+            xs[:mitad]
         )
 
-        if conteo >= 4:
+        centro_surco_2 = np.mean(
+            xs[mitad:]
+        )
 
-            xs = sorted(
-                plantas_validas["cx"].tolist()
-            )
-
-            mitad = len(xs) // 2
-
-            centro_surco_1 = np.mean(
-                xs[:mitad]
-            )
-
-            centro_surco_2 = np.mean(
-                xs[mitad:]
-            )
-
-            surco_1 = plantas_validas[
-                np.abs(
-                    plantas_validas["cx"]
-                    - centro_surco_1
-                )
-                <
-                np.abs(
-                    plantas_validas["cx"]
-                    - centro_surco_2
-                )
-            ]
-
-            surco_2 = plantas_validas[
-                np.abs(
-                    plantas_validas["cx"]
-                    - centro_surco_2
-                )
-                <=
-                np.abs(
-                    plantas_validas["cx"]
-                    - centro_surco_1
-                )
-            ]
-
-            distancia_surcos_px = abs(
-                centro_surco_2
+        surco_1 = df[
+            np.abs(
+                df["cx"]
                 - centro_surco_1
+            )
+            <
+            np.abs(
+                df["cx"]
+                - centro_surco_2
+            )
+        ]
+
+        surco_2 = df[
+            np.abs(
+                df["cx"]
+                - centro_surco_2
+            )
+            <=
+            np.abs(
+                df["cx"]
+                - centro_surco_1
+            )
+        ]
+
+        altura = image.shape[0]
+
+        cv2.line(
+            image,
+            (int(centro_surco_1), 0),
+            (int(centro_surco_1), altura),
+            (0, 255, 255),
+            3
+        )
+
+        cv2.line(
+            image,
+            (int(centro_surco_2), 0),
+            (int(centro_surco_2), altura),
+            (0, 255, 255),
+            3
+        )
+
+        for idx, row in df.iterrows():
+
+            x = int(row["x"])
+            y = int(row["y"])
+            w = int(row["w"])
+            h = int(row["h"])
+
+            cx = int(row["cx"])
+            cy = int(row["cy"])
+
+            cv2.rectangle(
+                image,
+                (x, y),
+                (x + w, y + h),
+                (0, 0, 255),
+                2
+            )
+
+            cv2.circle(
+                image,
+                (cx, cy),
+                5,
+                (255, 0, 0),
+                -1
+            )
+
+        distancia_surcos_px = abs(
+            centro_surco_2
+            - centro_surco_1
+        )
+
+        def estadisticas_surco(df_surco):
+
+            if len(df_surco) < 2:
+                return None
+
+            posiciones = sorted(
+                df_surco["cy"].tolist()
             )
 
             distancias_cm = []
 
-            for surco in [surco_1, surco_2]:
+            for i in range(
+                len(posiciones) - 1
+            ):
 
-                if len(surco) < 2:
-                    continue
-
-                posiciones = sorted(
-                    surco["cy"].tolist()
+                distancia_px = (
+                    posiciones[i + 1]
+                    - posiciones[i]
                 )
 
-                for i in range(
-                    len(posiciones) - 1
-                ):
-
-                    distancia_px = (
-                        posiciones[i + 1]
-                        - posiciones[i]
-                    )
-
-                    distancia_cm = (
-                        distancia_px
-                        /
-                        distancia_surcos_px
-                    ) * distancia_surco_cm
-
-                    distancias_cm.append(
-                        distancia_cm
-                    )
-
-            if len(distancias_cm) > 0:
-
-                media = np.mean(
-                    distancias_cm
-                )
-
-                desvio = np.std(
-                    distancias_cm
-                )
-
-                cv = (
-                    desvio
-                    /
-                    media
-                ) * 100
-
-                longitud_px = (
-                    max(
-                        plantas_validas["cy"]
-                    )
-                    -
-                    min(
-                        plantas_validas["cy"]
-                    )
-                )
-
-                longitud_m = (
-                    longitud_px
+                distancia_cm = (
+                    distancia_px
                     /
                     distancia_surcos_px
-                ) * (
-                    distancia_surco_cm
-                    / 100
+                ) * distancia_surco_cm
+
+                distancias_cm.append(
+                    distancia_cm
                 )
 
-                densidad_m = (
-                    conteo
-                    /
-                    (longitud_m * 2)
+            media = np.mean(
+                distancias_cm
+            )
+
+            desvio = np.std(
+                distancias_cm
+            )
+
+            cv = (
+                desvio /
+                media
+            ) * 100
+
+            return {
+                "plantas": len(df_surco),
+                "media": media,
+                "desvio": desvio,
+                "cv": cv
+            }
+
+        stats_1 = estadisticas_surco(
+            surco_1
+        )
+
+        stats_2 = estadisticas_surco(
+            surco_2
+        )
+
+        longitud_px = (
+            max(df["cy"])
+            -
+            min(df["cy"])
+        )
+
+        longitud_m = (
+            longitud_px
+            /
+            distancia_surcos_px
+        ) * (
+            distancia_surco_cm
+            / 100
+        )
+
+        densidad_m = (
+            len(df)
+            /
+            (longitud_m * 2)
+        )
+
+        densidad_ha = (
+            densidad_m
+            *
+            10000
+            /
+            (
+                distancia_surco_cm
+                / 100
+            )
+        )
+
+        medias = []
+
+        desvios = []
+
+        cvs = []
+
+        for s in [stats_1, stats_2]:
+
+            if s:
+
+                medias.append(
+                    s["media"]
                 )
 
-                densidad_ha = (
-                    densidad_m
-                    *
-                    10000
-                    /
-                    (
-                        distancia_surco_cm
-                        / 100
-                    )
+                desvios.append(
+                    s["desvio"]
                 )
 
-                st.subheader(
-                    "📊 Resultados"
+                cvs.append(
+                    s["cv"]
                 )
 
-                c1, c2 = st.columns(2)
+        media_general = np.mean(
+            medias
+        )
 
-                with c1:
+        desvio_general = np.mean(
+            desvios
+        )
 
-                    st.metric(
-                        "Densidad",
-                        f"{densidad_m:.2f} pl/m"
-                    )
+        cv_general = np.mean(
+            cvs
+        )
 
-                    st.metric(
-                        "Densidad Ha",
-                        f"{densidad_ha:,.0f}"
-                    )
+        col1, col2 = st.columns(2)
 
-                with c2:
+        with col1:
+            st.image(
+                cv2.cvtColor(
+                    original,
+                    cv2.COLOR_BGR2RGB
+                ),
+                caption="Original",
+                use_container_width=True
+            )
 
-                    st.metric(
-                        "Media",
-                        f"{media:.2f} cm"
-                    )
-
-                    st.metric(
-                        "Desvío Std",
-                        f"{desvio:.2f} cm"
-                    )
-
-                    st.metric(
-                        "CV",
-                        f"{cv:.2f}%"
-                    )
+        with col2:
+            st.image(
+                cv2.cvtColor(
+                    image,
+                    cv2.COLOR_BGR2RGB
+                ),
+                caption="Procesada",
+                use_container_width=True
+            )
 
         st.subheader(
-            "Detalle de detecciones"
+            "📊 Resultados por Surco"
         )
 
-        st.dataframe(
-            plantas_validas,
-            use_container_width=True
-        )
+        c1, c2 = st.columns(2)
+
+        with c1:
+
+            st.markdown(
+                "### Surco 1"
+            )
+
+            if stats_1:
+
+                st.metric(
+                    "Plantas",
+                    stats_1["plantas"]
+                )
+
+                st.metric(
+                    "Media",
+                    f"{stats_1['media']:.2f} cm"
+                )
+
+                st.metric(
+                    "Desvío",
+                    f"{stats_1['desvio']:.2f}"
+                )
+
+                st.metric(
+                    "CV",
+                    f"{stats_1['cv']:.2f}%"
+                )
+
+        with c2:
+
+            st.markdown(
+                "### Surco 2"
+            )
+
+            if stats_2:
+
+                st.metric(
+                    "Plantas",
+                    stats_2["plantas"]
+                )
+
+                st.metric(
+                    "Media",
+                    f"{stats_2['media']:.2f} cm"
+                )
+
+                st.metric(
+                    "Desvío",
+                    f"{stats_2['desvio']:.2f}"
+                )
+
+                st.metric(
+                    "CV",
+                    f"{stats_2['cv']:.2f}%"
+                )
+
+        st.subheader(
+        
