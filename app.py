@@ -185,30 +185,53 @@ def analizar(i, archivo):
     activas = [p for k, p in enumerate(todas) if k not in quitadas]
     m = {"fid": fid, "nombre": archivo.name, "img": img, "h": h, "w": w, "ids": ids_validos, "qkey": qkey,
          "surcos": None, "tot": None, "pil": None}
-    if len(activas) >= 2:
-        surcos, tot = pl.calcular(activas, lineas, h, w, float(distancia_surco_cm),
-                                  float(largo_real) if largo_real > 0 else None)
-      if mostrar_detecciones:
+        if len(activas) >= 2:
 
-    if mostrar_detecciones:
+        surcos, tot = pl.calcular(
+            activas,
+            lineas,
+            h,
+            w,
+            float(distancia_surco_cm),
+            float(largo_real)
+            if largo_real > 0
+            else None
+        )
 
-    out = pl.dibujar(
-        img,
-        todas,
-        lineas,
-        surcos,
-        quitadas
-    )
+        if mostrar_detecciones:
 
-else:
+            out = pl.dibujar(
+                img,
+                todas,
+                lineas,
+                surcos,
+                quitadas
+            )
 
-    out = img.copy()
-else:
+        else:
 
-    out = img.copy()
-        m.update(surcos=surcos, tot=tot, pil=Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB)))
+            out = img.copy()
+
+        m.update(
+            surcos=surcos,
+            tot=tot,
+            pil=Image.fromarray(
+                cv2.cvtColor(
+                    out,
+                    cv2.COLOR_BGR2RGB
+                )
+            )
+        )
+
     else:
-        m["pil"] = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+        m["pil"] = Image.fromarray(
+            cv2.cvtColor(
+                img,
+                cv2.COLOR_BGR2RGB
+            )
+        )
+
     return m
 
 
