@@ -106,8 +106,15 @@ mostrar_rectangulos = st.checkbox(
     "Mostrar rectángulos",
     value=True
 )
-    sensibilidad = int(st.slider("Sensibilidad de detección", 15, 60, 35,
-                                 help="Más bajo detecta más verde (más plantas, más falsos). Más alto es más exigente."))
+        sensibilidad = int(
+        st.slider(
+            "Sensibilidad de detección",
+            15,
+            60,
+            35,
+            help="Más bajo detecta más verde (más plantas, más falsos). Más alto es más exigente."
+        )
+    )
     inclinada = st.checkbox("Fotos inclinadas (corregir perspectiva)", False,
                             help="Inclina las líneas de surco siguiendo las plantas y corrige la escala. "
                                  "Con las fotos derechas, dejalo apagado.")
