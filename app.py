@@ -310,4 +310,5 @@ if uploaded_file is not None:
 
                     st.metric(
                         "Densidad Ha",
-                        f"{densidad_
+                        f"{densidad_ha:,.0f} Plantas/Ha"
+)
