@@ -18,6 +18,13 @@ distancia_surco_cm = st.number_input(
     step=1.0
 )
 
+objetivo_ha = st.number_input(
+    "Población objetivo (Plantas/Ha)",
+    min_value=10000,
+    value=70000,
+    step=1000
+)
+
 uploaded_file = st.file_uploader(
     "Subí una foto",
     type=["jpg", "jpeg", "png"]
@@ -136,7 +143,7 @@ if uploaded_file is not None:
         st.subheader("Imagen Procesada")
 
         st.info(
-            "Los números amarillos coinciden con los IDs de la tabla."
+            "Los números amarillos coinciden con el ID de la tabla."
         )
 
         st.image(
@@ -252,8 +259,7 @@ if uploaded_file is not None:
                 ) * 100
 
                 densidad_m = (
-                    100 /
-                    media
+                    100 / media
                 )
 
                 densidad_ha = (
@@ -261,6 +267,33 @@ if uploaded_file is not None:
                     10000 /
                     (distancia_surco_cm / 100)
                 )
+
+                areas = plantas_validas[
+                    "area"
+                ].tolist()
+
+                media_tamano = np.mean(
+                    areas
+                )
+
+                desvio_tamano = np.std(
+                    areas
+                )
+
+                cv_tamano = (
+                    desvio_tamano /
+                    media_tamano
+                ) * 100
+
+                desvio_poblacional = abs(
+                    densidad_ha -
+                    objetivo_ha
+                )
+
+                desvio_poblacional = (
+                    desvio_poblacional /
+                    objetivo_ha
+                ) * 100
 
                 st.subheader(
                     "📊 Resultados"
@@ -277,37 +310,4 @@ if uploaded_file is not None:
 
                     st.metric(
                         "Densidad Ha",
-                        f"{densidad_ha:,.0f} Plantas/Ha"
-                    )
-
-                    st.metric(
-                        "Media",
-                        f"{media:.2f} cm"
-                    )
-
-                with c2:
-
-                    st.metric(
-                        "Desvío estándar",
-                        f"{desvio:.2f} cm"
-                    )
-
-                    st.metric(
-                        "CV",
-                        f"{cv:.2f}%"
-                    )
-
-        st.subheader(
-            "Detalle de detecciones"
-        )
-
-        st.dataframe(
-            plantas_validas,
-            use_container_width=True
-        )
-
-    else:
-
-        st.warning(
-            "No se detectaron plantas."
-        )
+                        f"{densidad_
