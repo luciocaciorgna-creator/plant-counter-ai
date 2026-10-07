@@ -93,20 +93,10 @@ with st.sidebar:
     objetivo = st.number_input("Densidad objetivo (pl/ha, opcional)", 0, 300000, 0, 1000)
     st.header("Ajustes")
 
-    mostrar_surcos = st.checkbox(
-        "Mostrar líneas de surco",
-        value=True
-    )
-
-    mostrar_centros = st.checkbox(
-        "Mostrar centros",
-        value=True
-    )
-
-    mostrar_rectangulos = st.checkbox(
-        "Mostrar rectángulos",
-        value=True
-    )
+ mostrar_detecciones = st.toggle(
+    "👁 Mostrar detecciones",
+    value=True
+)
 
     sensibilidad = int(
         st.slider(
@@ -167,13 +157,19 @@ def analizar(i, archivo):
     if len(activas) >= 2:
         surcos, tot = pl.calcular(activas, lineas, h, w, float(distancia_surco_cm),
                                   float(largo_real) if largo_real > 0 else None)
-        out = pl.dibujar(
-    img,
-    todas,
-    lineas if mostrar_surcos else [],
-    surcos,
-    quitadas
-)
+      if mostrar_detecciones:
+
+    out = pl.dibujar(
+        img,
+        todas,
+        lineas,
+        surcos,
+        quitadas
+    )
+
+else:
+
+    out = img.copy()
         m.update(surcos=surcos, tot=tot, pil=Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB)))
     else:
         m["pil"] = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
