@@ -91,12 +91,12 @@ with st.sidebar:
     distancia_surco_cm = st.number_input("Distancia entre surcos (cm)", 10.0, 150.0, 52.0, 0.5)
     n_surcos = int(st.number_input("Surcos en la foto", 2, 6, 2, 1))
     objetivo = st.number_input("Densidad objetivo (pl/ha, opcional)", 0, 300000, 0, 1000)
-    st.header("Ajustes")
+      st.header("Ajustes")
 
- mostrar_detecciones = st.toggle(
-    "👁 Mostrar detecciones",
-    value=True
-)
+    mostrar_detecciones = st.toggle(
+        "👁 Mostrar detecciones",
+        value=True
+    )
 
     sensibilidad = int(
         st.slider(
