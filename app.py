@@ -17,21 +17,7 @@ DATA_DIR.mkdir(exist_ok=True)
 st.title("🌱 Plant Counter AI")
 st.subheader("Stand de plantas")
 
-if "establecimientos" not in st.session_state:
-EST_FILE = DATA_DIR / "establecimientos.json"
 
-if not EST_FILE.exists():
-
-    with open(
-        EST_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        json.dump(
-            {
-                "Establecimiento 1": [
-                    "Lote 1"
                 ]
             },
             f,
