@@ -395,4 +395,42 @@ if uploaded_file is not None:
                 )
 
         st.subheader(
-        
+            "📈 Promedio General"
+        )
+
+        c3, c4 = st.columns(2)
+
+        with c3:
+
+            st.metric(
+                "Densidad",
+                f"{densidad_m:.2f} pl/m"
+            )
+
+            st.metric(
+                "Densidad Ha",
+                f"{densidad_ha:,.0f}"
+            )
+
+        with c4:
+
+            st.metric(
+                "Media",
+                f"{media_general:.2f} cm"
+            )
+
+            st.metric(
+                "Desvío",
+                f"{desvio_general:.2f}"
+            )
+
+            st.metric(
+                "CV",
+                f"{cv_general:.2f}%"
+            )
+
+else:
+
+    st.info(
+        "Subí una imagen para comenzar."
+    )
