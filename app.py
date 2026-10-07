@@ -141,7 +141,13 @@ def analizar(i, archivo):
     if len(activas) >= 2:
         surcos, tot = pl.calcular(activas, lineas, h, w, float(distancia_surco_cm),
                                   float(largo_real) if largo_real > 0 else None)
-        out = pl.dibujar(img, todas, lineas, surcos, quitadas)
+        out = pl.dibujar(
+    img,
+    todas,
+    lineas if mostrar_surcos else [],
+    surcos,
+    quitadas
+)
         m.update(surcos=surcos, tot=tot, pil=Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB)))
     else:
         m["pil"] = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
