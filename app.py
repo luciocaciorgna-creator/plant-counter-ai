@@ -1,165 +1,181 @@
 import hashlib
+import time
 
 import cv2
 import numpy as np
 import pandas as pd
-import json
-from pathlib import Path
 import streamlit as st
 from PIL import Image
 from streamlit_image_coordinates import streamlit_image_coordinates
 
 import plant_logic as pl
+import storage as sto
 
-st.set_page_config(page_title="Plant Counter AI V1.1", layout="wide")
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
+st.set_page_config(page_title="Plant Counter AI V1.2", layout="wide")
 st.title("🌱 Plant Counter AI")
 st.subheader("Stand de plantas")
 
-if "establecimientos" not in st.session_state:
+sb = st.sidebar
 
-    st.session_state.establecimientos = {
-        "Establecimiento 1": [
-            "Lote 1"
-        ]
-    }
+# ============================================================ establecimiento / lote
+sb.header("🏢 Establecimiento y lote")
+for k in ("sel_est", "sel_lote"):  # selección pendiente tras crear uno nuevo
+    if f"_next_{k}" in st.session_state:
+        st.session_state[k] = st.session_state.pop(f"_next_{k}")
 
-st.sidebar.header("🏢 Gestión")
-
-establecimiento = st.sidebar.selectbox(
-    "Establecimiento",
-    list(
-        st.session_state.establecimientos.keys()
-    )
-)
-
-nuevo_est = st.sidebar.text_input(
-    "Nuevo establecimiento"
-)
-
-if st.sidebar.button(
-    "Agregar establecimiento"
-):
-
-    if (
-        nuevo_est
-        and
-        nuevo_est
-        not in st.session_state.establecimientos
-    ):
-
-        st.session_state.establecimientos[
-            nuevo_est
-        ] = []
-
+estructura = sto.cargar_estructura()
+ests = list(estructura.keys())
+est = sb.selectbox("Establecimiento", ests, key="sel_est")
+with sb.form("f_est", clear_on_submit=True):
+    nuevo_est = st.text_input("Nuevo establecimiento")
+    if st.form_submit_button("Agregar establecimiento") and sto.agregar_establecimiento(nuevo_est):
+        st.session_state["_next_sel_est"] = nuevo_est.strip()
         st.rerun()
 
-lote = st.sidebar.selectbox(
-    "Lote",
-    st.session_state.establecimientos[
-        establecimiento
-    ]
-)
-
-nuevo_lote = st.sidebar.text_input(
-    "Nuevo lote"
-)
-
-if st.sidebar.button(
-    "Agregar lote"
-):
-
-    if nuevo_lote:
-
-        st.session_state.establecimientos[
-            establecimiento
-        ].append(
-            nuevo_lote
-        )
-
+lotes = list(estructura.get(est, {}).keys())
+lote = sb.selectbox("Lote", lotes, key="sel_lote") if lotes else None
+with sb.form("f_lote", clear_on_submit=True):
+    nuevo_lote = st.text_input("Nuevo lote")
+    if st.form_submit_button("Agregar lote") and sto.agregar_lote(est, nuevo_lote):
+        st.session_state["_next_sel_lote"] = nuevo_lote.strip()
         st.rerun()
 
-st.info(
-    f"🏢 {establecimiento} | 📍 {lote}"
-)
+if lote is None:
+    st.info("Este establecimiento todavía no tiene lotes. Agregá uno desde la barra lateral.")
+    st.stop()
 
-# ------------------------------------------------------------------ opciones
-with st.sidebar:
-    st.header("Datos del lote")
-    lote = st.text_input("Lote", "")
-    distancia_surco_cm = st.number_input("Distancia entre surcos (cm)", 10.0, 150.0, 52.0, 0.5)
-    n_surcos = int(st.number_input("Surcos en la foto", 2, 6, 2, 1))
-    objetivo = st.number_input("Densidad objetivo (pl/ha, opcional)", 0, 300000, 0, 1000)
-    st.header("Ajustes")
-    sensibilidad = int(st.slider("Sensibilidad de detección", 15, 60, 35,
-                                 help="Más bajo detecta más verde (más plantas, más falsos). Más alto es más exigente."))
-    inclinada = st.checkbox("Fotos inclinadas (corregir perspectiva)", False,
-                            help="Inclina las líneas de surco siguiendo las plantas y corrige la escala. "
-                                 "Con las fotos derechas, dejalo apagado.")
-    largo_real = st.number_input("Largo real de la foto (cm, opcional)", 0, 500, 0, 1,
-                                 help="Si sabés cuántos cm de surco entran en tus fotos (medido una vez con cinta, "
-                                      "a la altura a la que sacás siempre), cargalo y la densidad sale exacta. "
-                                      "Se aplica a todas las muestras.")
+# ----------------------------------------------------- configuración (se guarda por lote)
+cfg = sto.cfg_lote(est, lote)
+pref = f"{est}|{lote}|"
+sb.header("Datos del lote")
+distancia_surco_cm = sb.number_input("Distancia entre surcos (cm)", 10.0, 150.0,
+                                     float(cfg["entre_surcos"]), 0.5, key=pref + "entre")
+n_surcos = int(sb.number_input("Surcos en la foto", 2, 6, int(cfg["n_surcos"]), 1, key=pref + "n"))
+objetivo = sb.number_input("Densidad objetivo (pl/ha, opcional)", 0, 300000, int(cfg["objetivo"]), 1000,
+                           key=pref + "obj")
+sb.header("Ajustes")
+inclinada = sb.checkbox("Fotos inclinadas (corregir perspectiva)", bool(cfg.get("inclinada", False)),
+                        key=pref + "inc",
+                        help="Inclina las líneas de surco siguiendo las plantas y corrige la escala. "
+                             "Con las fotos derechas, dejalo apagado.")
+largo_real = sb.number_input("Largo real de la foto (cm, opcional)", 0, 500, int(cfg.get("largo_real", 0)), 1,
+                             key=pref + "lr",
+                             help="Si sabés cuántos cm de surco entran en tus fotos (medido una vez con cinta, "
+                                  "a la altura a la que sacás siempre), cargalo y la densidad sale exacta. "
+                                  "Se aplica a todas las muestras del lote.")
+sens_nueva = int(sb.slider("Sensibilidad para fotos nuevas", 15, 60, 35, key="sens",
+                           help="Más bajo detecta más verde (más plantas, más falsos). Cada foto guardada "
+                                "conserva la sensibilidad con la que se cargó."))
+cfg_actual = {"entre_surcos": float(distancia_surco_cm), "n_surcos": n_surcos, "objetivo": int(objetivo),
+              "inclinada": bool(inclinada), "largo_real": int(largo_real)}
+if any(cfg.get(k) != v for k, v in cfg_actual.items()):
+    sto.guardar_cfg(est, lote, cfg_actual)
 
-archivos = st.file_uploader("Subí las fotos (una por muestra)", type=["jpg", "jpeg", "png"],
-                            accept_multiple_files=True)
+# ----------------------------------------------------------------------- respaldo
+with sb.expander("💾 Respaldo de datos"):
+    st.caption("Streamlit Cloud borra los archivos cuando la app se reinicia. Bajá un respaldo de vez en cuando "
+               "y restauralo si hace falta.")
+    if st.checkbox("Preparar respaldo (.zip)", key="prep_zip"):
+        st.download_button("Descargar respaldo", sto.exportar_zip(), "plant_counter_respaldo.zip", "application/zip")
+    zip_sub = st.file_uploader("Restaurar respaldo", type=["zip"], key="zip_up")
+    if zip_sub is not None and st.button("Restaurar ahora"):
+        sto.importar_zip(zip_sub.getvalue())
+        st.rerun()
+
+st.info(f"🏢 {est}  |  📍 {lote}")
+
+# ------------------------------------------------------------------ subida de fotos
+st.session_state.setdefault("up_n", 0)
+archivos = st.file_uploader("Subí fotos nuevas (una por muestra)", type=["jpg", "jpeg", "png"],
+                            accept_multiple_files=True, key=f"up_{st.session_state['up_n']}")
+
+
+@st.cache_data(show_spinner=False)
+def comprimir(datos: bytes):
+    return sto.comprimir(datos)
 
 
 @st.cache_data(show_spinner="Detectando plantas...")
 def procesar(datos: bytes, sens: int, n: int):
     img = cv2.imdecode(np.frombuffer(datos, np.uint8), cv2.IMREAD_COLOR)
-    h, w = img.shape[:2]
-    if w > 1400:
-        img = cv2.resize(img, (1400, int(h * 1400 / w)), interpolation=cv2.INTER_AREA)
     plantas = pl.detectar_plantas(img, sens)
     pl.asignar_surcos(plantas, n)
     return img, plantas
 
 
-def analizar(i, archivo):
-    """Procesa una muestra aplicando las correcciones manuales guardadas."""
-    datos = archivo.getvalue()
-    fid = f"{hashlib.md5(datos).hexdigest()[:10]}_{i}"
-    img, detectadas = procesar(datos, sensibilidad, n_surcos)
+def fuentes_del_lote():
+    out = []
+    for m in sto.listar_muestras(est, lote):
+        out.append({"fid": f"g{m['id']}", "sid": m["id"], "nombre": m.get("nombre", "foto"),
+                    "datos": sto.leer_foto(est, lote, m["id"]), "meta": m, "sens": int(m.get("sens", 35)),
+                    "guardada": True})
+    for i, a in enumerate(archivos or []):
+        datos = comprimir(a.getvalue())
+        out.append({"fid": f"n{hashlib.md5(datos).hexdigest()[:10]}_{i}", "sid": None, "nombre": a.name,
+                    "datos": datos, "meta": None, "sens": sens_nueva, "guardada": False})
+    return out
+
+
+def analizar(f):
+    fid = f["fid"]
+    img, detectadas = procesar(f["datos"], f["sens"], n_surcos)
     h, w = img.shape[:2]
     ids_validos = [k + 1 for k, p in enumerate(detectadas) if not p["fuera"]]
-    qkey = f"quitar_{fid}_{sensibilidad}_{n_surcos}"
+    qkey = f"quitar_{fid}_{f['sens']}"
+    akey = f"ag_{fid}"
+    if f["guardada"]:  # primera vez en esta sesión: cargar correcciones guardadas
+        st.session_state.setdefault(qkey, list(f["meta"].get("quitar", [])))
+        st.session_state.setdefault(akey, [tuple(x) for x in f["meta"].get("agregadas", [])])
     quitar_ids = [k for k in st.session_state.get(qkey, []) if k in ids_validos]
+    st.session_state[qkey] = quitar_ids  # evita ids viejos en el multiselect
     quitadas = {k - 1 for k in quitar_ids} | {k for k, p in enumerate(detectadas) if p["fuera"]}
     auto = [p for k, p in enumerate(detectadas) if k not in quitadas]
     lineas = pl.lineas_iniciales(auto, n_surcos, w, inclinada, h)
     manuales = []
-    for (mx, my) in st.session_state.get(f"ag_{fid}", []):
+    for (mx, my) in st.session_state.get(akey, []):
         xs = [t + (b - t) * my / h for (t, b) in lineas]
         manuales.append({"x": mx, "y": my, "box": None, "manual": True, "fuera": False,
                          "surco": int(np.argmin([abs(mx - x) for x in xs]))})
     todas = detectadas + manuales
     activas = [p for k, p in enumerate(todas) if k not in quitadas]
-    m = {"fid": fid, "nombre": archivo.name, "img": img, "h": h, "w": w, "ids": ids_validos, "qkey": qkey,
-         "surcos": None, "tot": None, "pil": None}
+    agregadas = [[round(x, 1), round(y, 1)] for x, y in st.session_state.get(akey, [])]
+    m = {**f, "img": img, "h": h, "w": w, "ids": ids_validos, "qkey": qkey, "akey": akey,
+         "quitar": sorted(quitar_ids), "agregadas": agregadas, "surcos": None, "tot": None,
+         "draw": (todas, lineas, quitadas)}
     if len(activas) >= 2:
-        surcos, tot = pl.calcular(activas, lineas, h, w, float(distancia_surco_cm),
-                                  float(largo_real) if largo_real > 0 else None)
-        out = pl.dibujar(img, todas, lineas, surcos, quitadas)
-        m.update(surcos=surcos, tot=tot, pil=Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB)))
-    else:
-        m["pil"] = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        m["surcos"], m["tot"] = pl.calcular(activas, lineas, h, w, float(distancia_surco_cm),
+                                            float(largo_real) if largo_real > 0 else None)
+        m["draw"] = (todas, lineas, quitadas)
+    if f["guardada"] and (m["quitar"] != sorted(f["meta"].get("quitar", []))
+                          or agregadas != f["meta"].get("agregadas", [])):
+        sto.actualizar_muestra(est, lote, f["sid"], {"quitar": m["quitar"], "agregadas": agregadas})
     return m
 
 
-if not archivos:
+fuentes = fuentes_del_lote()
+if not fuentes:
     st.info("Subí una o más fotos para comenzar. Lo ideal: fotos paralelas al suelo, con 2 surcos, "
             "y varias por lote (SIMA recomienda cerca de 10 m de surco en total).")
     st.stop()
 
-muestras = [analizar(i, a) for i, a in enumerate(archivos)]
+muestras = [analizar(f) for f in fuentes]
+nuevas = [m for m in muestras if not m["guardada"]]
 ok = [m for m in muestras if m["tot"]]
 
-# ------------------------------------------------------- resumen general
-st.header("📈 Resumen del lote" + (f": {lote}" if lote else ""))
+if nuevas:
+    st.warning(f"{len(nuevas)} foto(s) todavía sin guardar. Corregí las plantas si hace falta y guardalas en el lote.")
+    if st.button(f"💾 Guardar {len(nuevas)} foto(s) en {est} / {lote}", type="primary"):
+        for m in nuevas:
+            sto.guardar_muestra(est, lote, m["datos"], {
+                "nombre": m["nombre"], "sens": m["sens"], "quitar": m["quitar"],
+                "agregadas": m["agregadas"], "fecha": time.strftime("%d/%m/%Y %H:%M")})
+        st.session_state["up_n"] += 1
+        st.rerun()
+
+# ================================================================ resumen del lote
+st.header(f"📈 Resumen del lote: {lote}")
 if not ok:
-    st.warning("No pude calcular ninguna muestra. Probá bajar la sensibilidad o agregar plantas a mano.")
+    st.warning("No pude calcular ninguna muestra. Probá agregar plantas a mano.")
 else:
     filas = []
     for k, m in enumerate(muestras):
@@ -167,8 +183,8 @@ else:
         if not t:
             continue
         filas.append({
-            "Muestra": f"{k + 1}. {m['nombre']}", "Plantas": t["plantas"],
-            "m de surco": round(t["largo_cm"] * n_surcos / 100, 1),
+            "Muestra": f"{k + 1}. {m['nombre']}" + ("" if m["guardada"] else " (sin guardar)"),
+            "Plantas": t["plantas"], "m de surco": round(t["largo_cm"] * n_surcos / 100, 1),
             "pl/m": round(t["pl_m"], 2), "pl/ha": round(t["pl_ha"]),
             "Media (cm)": round(t["media_cm"], 1), "Desvío (cm)": round(t["desvio_cm"], 1),
             "CV (%)": round(t["cv"], 1), "CV": pl.semaforo(t["cv"], 22, 30),
@@ -210,30 +226,69 @@ else:
     if prom["metros"] < 10:
         st.caption("SIMA recomienda cerca de 10 m de surco por punto de muestreo: con menos, "
                    "el promedio es poco representativo.")
-    csv = tabla.assign(Lote=lote or "Sin nombre", Entre_surcos_cm=distancia_surco_cm)
+    csv = tabla.assign(Establecimiento=est, Lote=lote, Entre_surcos_cm=distancia_surco_cm)
     st.download_button("Descargar resumen (CSV)", csv.to_csv(index=False).encode("utf-8"),
-                       "stand_plantas.csv", "text/csv")
+                       f"stand_{lote}.csv", "text/csv")
 
-# ------------------------------------------------------ detalle por muestra
+# ============================================================== detalle por muestra
 st.header("🔍 Detalle por muestra")
-tabs = st.tabs([f"Muestra {k + 1}" for k in range(len(muestras))])
+tabs = st.tabs([f"Muestra {k + 1}" + ("" if m["guardada"] else " •") for k, m in enumerate(muestras)])
 for k, (tab, m) in enumerate(zip(tabs, muestras)):
     with tab:
         fid = m["fid"]
-        col_img, col_res = st.columns([3, 2])
-        with col_img:
-            modo = st.toggle("Modo agregar planta (tocá el tallo en la foto)", key=f"tg_{fid}")
-            click = streamlit_image_coordinates(m["pil"], key=f"img_{fid}", width=650)
-            if modo and click and click.get("unix_time") != st.session_state.get(f"uc_{fid}"):
-                st.session_state[f"uc_{fid}"] = click["unix_time"]
-                st.session_state.setdefault(f"ag_{fid}", []).append(
-                    (click["x"] * m["w"] / click["width"], click["y"] * m["h"] / click["height"]))
-                st.rerun()
+        todas, lineas, quitadas = m["draw"]
+        surcos_dib = m["surcos"] or []
+        vista = st.radio("Vista", ["Procesada", "Original", "Lado a lado"], horizontal=True, key=f"vista_{fid}")
+        t1, t2, t3, t4 = st.columns(4)
+        v_lin = t1.toggle("Líneas de surco", True, key=f"vl_{fid}")
+        v_caj = t2.toggle("Cajas y puntos", True, key=f"vc_{fid}")
+        v_dis = t3.toggle("Distancias", True, key=f"vd_{fid}")
+        modo = t4.toggle("Agregar planta (tocá el tallo)", key=f"tg_{fid}")
+
+        orig = Image.fromarray(cv2.cvtColor(m["img"], cv2.COLOR_BGR2RGB))
+        if m["tot"]:
+            proc = Image.fromarray(cv2.cvtColor(
+                pl.dibujar(m["img"], todas, lineas, surcos_dib, quitadas, v_lin, v_caj, v_dis), cv2.COLOR_BGR2RGB))
+        else:
+            proc = orig
+
+        click = None
+        if vista == "Original":
+            st.image(orig, width=650)
+        elif vista == "Procesada":
+            click = streamlit_image_coordinates(proc, key=f"img_{fid}", width=650)
+        else:
+            ia, ib = st.columns(2)
+            with ia:
+                st.image(orig, caption="Original", width=480)
+            with ib:
+                click = streamlit_image_coordinates(proc, key=f"img_{fid}", width=480)
+        if modo and click and click.get("unix_time") != st.session_state.get(f"uc_{fid}"):
+            st.session_state[f"uc_{fid}"] = click["unix_time"]
+            st.session_state.setdefault(m["akey"], []).append(
+                (click["x"] * m["w"] / click["width"], click["y"] * m["h"] / click["height"]))
+            st.rerun()
+
+        col_ctl, col_res = st.columns([3, 2])
+        with col_ctl:
             st.multiselect("Quitar plantas (por número)", m["ids"], key=m["qkey"],
-                           help="Los números aparecen sobre cada planta en la foto.")
-            if st.session_state.get(f"ag_{fid}") and st.button("Deshacer última planta agregada", key=f"un_{fid}"):
-                st.session_state[f"ag_{fid}"].pop()
+                           help="Los números aparecen sobre cada planta si 'Cajas y puntos' está prendido.")
+            if st.session_state.get(m["akey"]) and st.button("Deshacer última planta agregada", key=f"un_{fid}"):
+                st.session_state[m["akey"]].pop()
                 st.rerun()
+            if m["guardada"]:
+                st.caption(f"Guardada el {m['meta'].get('fecha', '-')} (sensibilidad {m['sens']}). "
+                           "Las correcciones se guardan solas.")
+                if st.session_state.get(f"del_{fid}"):
+                    if st.button("⚠️ Confirmar: eliminar esta muestra", key=f"dc_{fid}"):
+                        sto.eliminar_muestra(est, lote, m["sid"])
+                        st.session_state.pop(f"del_{fid}", None)
+                        st.rerun()
+                elif st.button("🗑️ Eliminar muestra", key=f"dl_{fid}"):
+                    st.session_state[f"del_{fid}"] = True
+                    st.rerun()
+            else:
+                st.caption("Muestra sin guardar: usá el botón de guardar de arriba.")
         with col_res:
             t = m["tot"]
             if not t:

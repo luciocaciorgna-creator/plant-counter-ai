@@ -204,17 +204,20 @@ def semaforo(valor, verde, amarillo):
 
 
 # ------------------------------------------------------------------- dibujo
-def dibujar(img_bgr, plantas, lineas, surcos, quitadas=()):
+def dibujar(img_bgr, plantas, lineas, surcos, quitadas=(), ver_lineas=True, ver_cajas=True, ver_dist=True):
+    """Dibuja las capas pedidas sobre la foto. Con las tres en False devuelve la original."""
     out = img_bgr.copy()
     h, w = out.shape[:2]
     u = w / 1200
     colores = [(60, 60, 235), (235, 140, 30), (0, 140, 255), (160, 40, 140), (140, 140, 0), (60, 80, 110)]
-    for (t, b) in lineas:
+    for (t, b) in (lineas if ver_lineas else []):
         cv2.line(out, (int(t), 0), (int(b), h), (0, 230, 255), max(2, int(3 * u)))
     por_surco = {}
     for i, p in enumerate(plantas):
         p["id"] = i + 1
         if i in quitadas:
+            continue
+        if not ver_cajas:
             continue
         col = colores[p.get("surco", 0) % 6]
         bx = p["box"] if p.get("box") else (p["x"] - 24 * u, p["y"] - 24 * u, p["x"] + 24 * u, p["y"] + 24 * u)
@@ -226,7 +229,7 @@ def dibujar(img_bgr, plantas, lineas, surcos, quitadas=()):
         cv2.putText(out, str(p["id"]), (int(bx[0]), max(15, int(bx[1]) - 6)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8 * u, (0, 0, 0), max(1, int(1.5 * u)))
         por_surco.setdefault(p.get("surco", 0), []).append(p)
-    for s, pts in por_surco.items():
+    for s, pts in (por_surco.items() if (ver_cajas and ver_dist) else []):
         pts = sorted(pts, key=lambda p: p["y"])
         dd = surcos[s]["dist_cm"] if s < len(surcos) else []
         for i in range(len(pts) - 1):
