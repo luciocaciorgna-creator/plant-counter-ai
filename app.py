@@ -86,12 +86,38 @@ st.info(
 
 # ------------------------------------------------------------------ opciones
 with st.sidebar:
+   with st.sidebar:
     st.header("Datos del lote")
+
     lote = st.text_input("Lote", "")
-    distancia_surco_cm = st.number_input("Distancia entre surcos (cm)", 10.0, 150.0, 52.0, 0.5)
-    n_surcos = int(st.number_input("Surcos en la foto", 2, 6, 2, 1))
-    objetivo = st.number_input("Densidad objetivo (pl/ha, opcional)", 0, 300000, 0, 1000)
-      st.header("Ajustes")
+
+    distancia_surco_cm = st.number_input(
+        "Distancia entre surcos (cm)",
+        10.0,
+        150.0,
+        52.0,
+        0.5
+    )
+
+    n_surcos = int(
+        st.number_input(
+            "Surcos en la foto",
+            2,
+            6,
+            2,
+            1
+        )
+    )
+
+    objetivo = st.number_input(
+        "Densidad objetivo (pl/ha, opcional)",
+        0,
+        300000,
+        0,
+        1000
+    )
+
+    st.header("Ajustes")
 
     mostrar_detecciones = st.toggle(
         "👁 Mostrar detecciones",
@@ -113,10 +139,15 @@ with st.sidebar:
         False,
         help="Inclina las líneas de surco siguiendo las plantas y corrige la escala. Con las fotos derechas, dejalo apagado."
     )
-    largo_real = st.number_input("Largo real de la foto (cm, opcional)", 0, 500, 0, 1,
-                                 help="Si sabés cuántos cm de surco entran en tus fotos (medido una vez con cinta, "
-                                      "a la altura a la que sacás siempre), cargalo y la densidad sale exacta. "
-                                      "Se aplica a todas las muestras.")
+
+    largo_real = st.number_input(
+        "Largo real de la foto (cm, opcional)",
+        0,
+        500,
+        0,
+        1,
+        help="Si sabés cuántos cm de surco entran en tus fotos, cargalo aquí."
+    )
 
 archivos = st.file_uploader("Subí las fotos (una por muestra)", type=["jpg", "jpeg", "png"],
                             accept_multiple_files=True)
