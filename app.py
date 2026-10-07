@@ -9,6 +9,7 @@ import streamlit as st
 from PIL import Image
 
 import plant_logic as pl
+import reporte as rp
 import storage as sto
 import viewer as vw
 
@@ -18,6 +19,10 @@ st.subheader("Stand de plantas")
 
 sb = st.sidebar
 
+# Al arrancar (o después de un reinicio de Streamlit Cloud) trae lo guardado en GitHub, si está configurado.
+with st.spinner("Cargando datos guardados..."):
+    sto.sincronizar_inicio()
+
 # ============================================================ establecimiento / lote
 sb.header("🏢 Establecimiento y lote")
 for k in ("sel_est", "sel_lote"):  # selección pendiente tras crear uno nuevo
@@ -26,6 +31,13 @@ for k in ("sel_est", "sel_lote"):  # selección pendiente tras crear uno nuevo
 
 estructura = sto.cargar_estructura()
 ests = list(estructura.keys())
+ult = sto.leer_ultimo()  # la primera vez de cada sesión, vuelve al último establecimiento y lote usados
+if "sel_est" not in st.session_state and ult.get("est") in ests:
+    st.session_state["sel_est"] = ult["est"]
+    if ult.get("lote") in estructura[ult["est"]]:
+        st.session_state["sel_lote"] = ult["lote"]
+if st.session_state.get("sel_est") not in ests:
+    st.session_state.pop("sel_est", None)
 est = sb.selectbox("Establecimiento", ests, key="sel_est")
 with sb.form("f_est", clear_on_submit=True):
     nuevo_est = st.text_input("Nuevo establecimiento")
@@ -34,6 +46,8 @@ with sb.form("f_est", clear_on_submit=True):
         st.rerun()
 
 lotes = list(estructura.get(est, {}).keys())
+if st.session_state.get("sel_lote") not in lotes:
+    st.session_state.pop("sel_lote", None)
 lote = sb.selectbox("Lote", lotes, key="sel_lote") if lotes else None
 with sb.form("f_lote", clear_on_submit=True):
     nuevo_lote = st.text_input("Nuevo lote")
@@ -44,6 +58,7 @@ with sb.form("f_lote", clear_on_submit=True):
 if lote is None:
     st.info("Este establecimiento todavía no tiene lotes. Agregá uno desde la barra lateral.")
     st.stop()
+sto.guardar_ultimo(est, lote)
 
 # ----------------------------------------------------- configuración (se guarda por lote)
 cfg = sto.cfg_lote(est, lote)
@@ -73,9 +88,33 @@ if any(cfg.get(k) != v for k, v in cfg_actual.items()):
     sto.guardar_cfg(est, lote, cfg_actual)
 
 # ----------------------------------------------------------------------- respaldo
+_alm = sto.estado_almacenamiento()
+if _alm["modo"] == "github":
+    sb.success(f"💾 Guardado permanente en GitHub ({_alm['repo']})")
+else:
+    sb.warning("⚠️ Guardado temporal: Streamlit Cloud borra los datos cuando la app se reinicia. "
+               "Conectá un repositorio de GitHub (ver abajo, en Respaldo de datos) o bajá respaldos.")
+if sto.ultimo_error():
+    sb.error(f"Problema con GitHub: {sto.ultimo_error()}")
+
 with sb.expander("💾 Respaldo de datos"):
-    st.caption("Streamlit Cloud borra los archivos cuando la app se reinicia. Bajá un respaldo de vez en cuando "
-               "y restauralo si hace falta.")
+    if _alm["modo"] == "github":
+        st.caption("Cada cambio se sube solo al repositorio. Estos botones sirven si algo quedó desparejo.")
+        if st.button("Subir todo a GitHub", key="gh_up"):
+            with st.spinner("Subiendo..."):
+                n_ = sto.subir_todo()
+            st.success(f"{n_} archivos revisados/subidos.")
+        if st.button("Traer todo de GitHub (pisa lo local)", key="gh_down"):
+            with st.spinner("Bajando..."):
+                n_ = sto.sincronizar_inicio(forzar=True)
+            st.success(f"{n_} archivos traídos.")
+    else:
+        st.markdown("**Para que no se pierdan los datos:** creá un repositorio **privado** en GitHub, un token "
+                    "(*Settings → Developer settings → Fine-grained tokens*, solo ese repositorio, permiso "
+                    "**Contents: Read and write**) y en Streamlit Cloud *Settings → Secrets* pegá:")
+        st.code('[github]\ntoken = "github_pat_..."\nrepo = "tu_usuario/tu_repositorio"\nbranch = "main"',
+                language="toml")
+        st.caption("Mientras tanto, bajá un respaldo (.zip) de vez en cuando.")
     if st.checkbox("Preparar respaldo (.zip)", key="prep_zip"):
         st.download_button("Descargar respaldo", sto.exportar_zip(), "plant_counter_respaldo.zip", "application/zip")
     zip_sub = st.file_uploader("Restaurar respaldo", type=["zip"], key="zip_up")
@@ -166,10 +205,11 @@ ok = [m for m in muestras if m["tot"]]
 if nuevas:
     st.warning(f"{len(nuevas)} foto(s) todavía sin guardar. Corregí las plantas si hace falta y guardalas en el lote.")
     if st.button(f"💾 Guardar {len(nuevas)} foto(s) en {est} / {lote}", type="primary"):
-        for m in nuevas:
-            sto.guardar_muestra(est, lote, m["datos"], {
-                "nombre": m["nombre"], "sens": m["sens"], "quitar": m["quitar"],
-                "agregadas": m["agregadas"], "fecha": time.strftime("%d/%m/%Y %H:%M")})
+        with st.spinner("Guardando..."):
+            for m in nuevas:
+                sto.guardar_muestra(est, lote, m["datos"], {
+                    "nombre": m["nombre"], "sens": m["sens"], "quitar": m["quitar"],
+                    "agregadas": m["agregadas"], "fecha": time.strftime("%d/%m/%Y %H:%M")})
         st.session_state["up_n"] += 1
         st.rerun()
 
@@ -230,6 +270,37 @@ else:
     csv = tabla.assign(Establecimiento=est, Lote=lote, Entre_surcos_cm=distancia_surco_cm)
     st.download_button("Descargar resumen (CSV)", csv.to_csv(index=False).encode("utf-8"),
                        f"stand_{lote}.csv", "text/csv")
+
+    # ------------------------------------------------------------------ informe PDF
+    st.subheader("📄 Informe en PDF")
+    inc_orig = st.checkbox("Incluir también la foto original (al lado de la procesada)", False, key="pdf_orig")
+    firma = (est, lote, inc_orig, float(distancia_surco_cm), n_surcos, int(objetivo), int(largo_real),
+             tuple((m["fid"], m["tot"]["plantas"], round(m["tot"]["pl_ha"]), tuple(m["quitar"]),
+                    tuple(map(tuple, m["agregadas"])), m["sens"], m["guardada"]) for m in ok))
+    if st.button("Generar PDF del lote"):
+        with st.spinner("Armando el PDF..."):
+            filas_pdf = [{"nombre": r["Muestra"].split(". ", 1)[-1], "plantas": r["Plantas"],
+                          "metros": r["m de surco"], "pl_m": r["pl/m"], "pl_ha": r["pl/ha"],
+                          "media": r["Media (cm)"], "desvio": r["Desvío (cm)"], "cv": r["CV (%)"]}
+                         for r in filas]
+            mu_pdf = []
+            for m_ in ok:
+                todas_, lineas_, quit_ = m_["draw"]
+                mu_pdf.append({"nombre": m_["nombre"], "fecha": (m_["meta"] or {}).get("fecha"), "tot": m_["tot"],
+                               "surcos": m_["surcos"], "sens": m_["sens"], "orig": m_["img"],
+                               "proc": pl.dibujar(m_["img"], todas_, lineas_, m_["surcos"], quit_)})
+            prom_pdf = {**prom, "pl_m": float(prom["pl_m"]), "pl_ha": float(prom["pl_ha"])}
+            st.session_state["pdf"] = (firma, rp.generar_pdf(
+                est, lote, {"entre_surcos": float(distancia_surco_cm), "n_surcos": n_surcos,
+                            "objetivo": int(objetivo), "largo_real": int(largo_real)},
+                filas_pdf, prom_pdf, mu_pdf, inc_orig))
+    if "pdf" in st.session_state:
+        firma_pdf, pdf_bytes = st.session_state["pdf"]
+        if firma_pdf == firma:
+            st.download_button("⬇️ Descargar PDF", pdf_bytes, f"stand_{est}_{lote}.pdf".replace(" ", "_"),
+                               "application/pdf")
+        else:
+            st.caption("Cambiaron las muestras o los datos desde el último PDF: volvé a generarlo.")
 
 # ============================================================== detalle por muestra
 st.header("🔍 Detalle por muestra")
