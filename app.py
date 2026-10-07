@@ -17,27 +17,21 @@ DATA_DIR.mkdir(exist_ok=True)
 st.title("🌱 Plant Counter AI")
 st.subheader("Stand de plantas")
 
+if "establecimientos" not in st.session_state:
 
-                ]
-            },
-            f,
-            indent=4,
-            ensure_ascii=False
-        )
-
-with open(
-    EST_FILE,
-    "r",
-    encoding="utf-8"
-) as f:
-
-    establecimientos = json.load(f)
+    st.session_state.establecimientos = {
+        "Establecimiento 1": [
+            "Lote 1"
+        ]
+    }
 
 st.sidebar.header("🏢 Gestión")
 
 establecimiento = st.sidebar.selectbox(
     "Establecimiento",
-    list(establecimientos.keys())
+    list(
+        st.session_state.establecimientos.keys()
+    )
 )
 
 nuevo_est = st.sidebar.text_input(
@@ -51,35 +45,21 @@ if st.sidebar.button(
     if (
         nuevo_est
         and
-        nuevo_est not in establecimientos
+        nuevo_est
+        not in st.session_state.establecimientos
     ):
 
-        establecimientos[
+        st.session_state.establecimientos[
             nuevo_est
-        ] = ["Lote 1"]
-
-        with open(
-            EST_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
-
-            json.dump(
-                establecimientos,
-                f,
-                indent=4,
-                ensure_ascii=False
-            )
+        ] = []
 
         st.rerun()
 
-lotes_disponibles = establecimientos[
-    establecimiento
-]
-
 lote = st.sidebar.selectbox(
     "Lote",
-    lotes_disponibles
+    st.session_state.establecimientos[
+        establecimiento
+    ]
 )
 
 nuevo_lote = st.sidebar.text_input(
@@ -90,52 +70,16 @@ if st.sidebar.button(
     "Agregar lote"
 ):
 
-    if (
-        nuevo_lote
-        and
-        nuevo_lote not in lotes_disponibles
-    ):
+    if nuevo_lote:
 
-        establecimientos[
+        st.session_state.establecimientos[
             establecimiento
         ].append(
             nuevo_lote
         )
 
-        with open(
-            EST_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
-
-            json.dump(
-                establecimientos,
-                f,
-                indent=4,
-                ensure_ascii=False
-            )
-
         st.rerun()
 
-lote_dir = (
-    DATA_DIR /
-    establecimiento /
-    lote
-)
-
-(lote_dir / "fotos").mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-(lote_dir / "resultados").mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-st.info(
-    f"🏢 {establecimiento} | 📍 {lote}"
-)
 st.info(
     f"🏢 {establecimiento} | 📍 {lote}"
 )
