@@ -83,8 +83,8 @@ if uploaded_file:
 
         x, y, w, h = cv2.boundingRect(c)
 
-        cx = x + (w / 2)
-        cy = y + (h / 2)
+        cx = x + w / 2
+        cy = y + h / 2
 
         cv2.rectangle(
             image,
@@ -97,9 +97,9 @@ if uploaded_file:
         cv2.putText(
             image,
             str(detection_id),
-            (x, y - 10),
+            (x, y - 5),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
+            0.6,
             (255, 255, 0),
             2
         )
@@ -116,26 +116,22 @@ if uploaded_file:
     col1, col2 = st.columns(2)
 
     with col1:
-
-        st.subheader("Imagen original")
-
         st.image(
             cv2.cvtColor(
                 original,
                 cv2.COLOR_BGR2RGB
             ),
+            caption="Original",
             use_container_width=True
         )
 
     with col2:
-
-        st.subheader("Imagen procesada")
-
         st.image(
             cv2.cvtColor(
                 image,
                 cv2.COLOR_BGR2RGB
             ),
+            caption="Procesada",
             use_container_width=True
         )
 
@@ -147,172 +143,138 @@ if uploaded_file:
 
         st.subheader("Corrección manual")
 
-        edited_df = st.data_editor(
+        df = st.data_editor(
             df,
-            hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            hide_index=True
         )
 
-        plantas_validas = edited_df[
-            edited_df["usar"] == True
+        plantas_validas = df[
+            df["usar"] == True
         ].copy()
 
-        conteo_final = len(
-            plantas_validas
-        )
+        conteo = len(plantas_validas)
 
         st.metric(
-            "🌱 Conteo Final",
-            conteo_final
+            "🌱 Plantas detectadas",
+            conteo
         )
 
-        if conteo_final >= 4:
+        if conteo >= 4:
 
-            centro_imagen = (
-                image.shape[1] / 2
+            xs = sorted(
+                plantas_validas["cx"].tolist()
             )
 
-            surco_izq = plantas_validas[
-                plantas_validas["cx"]
-                < centro_imagen
+            mitad = len(xs) // 2
+
+            centro_surco_1 = np.mean(
+                xs[:mitad]
+            )
+
+            centro_surco_2 = np.mean(
+                xs[mitad:]
+            )
+
+            surco_1 = plantas_validas[
+                np.abs(
+                    plantas_validas["cx"]
+                    - centro_surco_1
+                )
+                <
+                np.abs(
+                    plantas_validas["cx"]
+                    - centro_surco_2
+                )
             ]
 
-            surco_der = plantas_validas[
-                plantas_validas["cx"]
-                >= centro_imagen
+            surco_2 = plantas_validas[
+                np.abs(
+                    plantas_validas["cx"]
+                    - centro_surco_2
+                )
+                <=
+                np.abs(
+                    plantas_validas["cx"]
+                    - centro_surco_1
+                )
             ]
 
-            if (
-                len(surco_izq) >= 2
-                and
-                len(surco_der) >= 2
-            ):
+            distancia_surcos_px = abs(
+                centro_surco_2
+                - centro_surco_1
+            )
 
-                x_prom_izq = (
-                    surco_izq["cx"].mean()
+            distancias_cm = []
+
+            for surco in [surco_1, surco_2]:
+
+                if len(surco) < 2:
+                    continue
+
+                posiciones = sorted(
+                    surco["cy"].tolist()
                 )
 
-                x_prom_der = (
-                    surco_der["cx"].mean()
-                )
+                for i in range(
+                    len(posiciones) - 1
+                ):
 
-                distancia_surcos_px = abs(
-                    x_prom_der -
-                    x_prom_izq
-                )
-
-                distancias_cm = []
-
-                for surco in [
-                    surco_izq,
-                    surco_der
-                ]:
-
-                    posiciones = sorted(
-                        surco["cy"].tolist()
+                    distancia_px = (
+                        posiciones[i + 1]
+                        - posiciones[i]
                     )
 
-                    for i in range(
-                        len(posiciones) - 1
-                    ):
-
-                        distancia_px = (
-                            posiciones[i + 1]
-                            - posiciones[i]
-                        )
-
-                        distancia_cm = (
-                            distancia_px /
-                            distancia_surcos_px
-                        ) * distancia_surco_cm
-
-                        distancias_cm.append(
-                            distancia_cm
-                        )
-
-                if len(distancias_cm) > 0:
-
-                    media = np.mean(
-                        distancias_cm
-                    )
-
-                    desvio = np.std(
-                        distancias_cm
-                    )
-
-                    cv = (
-                        desvio /
-                        media
-                    ) * 100
-
-                    longitud_px = (
-                        max(
-                            plantas_validas["cy"]
-                        )
-                        -
-                        min(
-                            plantas_validas["cy"]
-                        )
-                    )
-
-                    longitud_m = (
-                        longitud_px /
+                    distancia_cm = (
+                        distancia_px
+                        /
                         distancia_surcos_px
-                    ) * (
-                        distancia_surco_cm / 100
+                    ) * distancia_surco_cm
+
+                    distancias_cm.append(
+                        distancia_cm
                     )
 
-                    densidad_m = (
-                        conteo_final /
-                        (longitud_m * 2)
+            if len(distancias_cm) > 0:
+
+                media = np.mean(
+                    distancias_cm
+                )
+
+                desvio = np.std(
+                    distancias_cm
+                )
+
+                cv = (
+                    desvio
+                    /
+                    media
+                ) * 100
+
+                longitud_px = (
+                    max(
+                        plantas_validas["cy"]
                     )
-
-                    densidad_ha = (
-                        densidad_m *
-                        10000 /
-                        (distancia_surco_cm / 100)
+                    -
+                    min(
+                        plantas_validas["cy"]
                     )
+                )
 
-                    st.subheader(
-                        "📊 Resultados"
-                    )
+                longitud_m = (
+                    longitud_px
+                    /
+                    distancia_surcos_px
+                ) * (
+                    distancia_surco_cm
+                    / 100
+                )
 
-                    c1, c2 = st.columns(2)
+                densidad_m = (
+                    conteo
+                    /
+                    (longitud_m * 2)
+                )
 
-                    with c1:
-
-                        st.metric(
-                            "Densidad",
-                            f"{densidad_m:.2f} pl/m"
-                        )
-
-                        st.metric(
-                            "Densidad Ha",
-                            f"{densidad_ha:,.0f}"
-                        )
-
-                    with c2:
-
-                        st.metric(
-                            "Media",
-                            f"{media:.2f} cm"
-                        )
-
-                        st.metric(
-                            "Desvío Std",
-                            f"{desvio:.2f} cm"
-                        )
-
-                        st.metric(
-                            "CV",
-                            f"{cv:.2f}%"
-                        )
-
-        st.subheader(
-            "Detalle detecciones"
-        )
-
-        st.dataframe(
-            plantas_validas,
-            use_container_width=True
-        )
+                densidad_ha = (
+  
