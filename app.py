@@ -268,13 +268,12 @@ if uploaded_file is not None:
                         )
                     )
 
-                    longitud_m = (
-                        longitud_px
-                        *
-                        cm_por_px
-                        /
-                        100
-                    )
+                   longitud_m = (
+    longitud_px /
+    distancia_surcos_px
+) * (
+    distancia_surco_cm / 100
+)
 
                     if longitud_m > 0:
 
