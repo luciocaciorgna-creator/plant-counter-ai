@@ -86,68 +86,21 @@ st.info(
 
 # ------------------------------------------------------------------ opciones
 with st.sidebar:
-   with st.sidebar:
     st.header("Datos del lote")
-
     lote = st.text_input("Lote", "")
-
-    distancia_surco_cm = st.number_input(
-        "Distancia entre surcos (cm)",
-        10.0,
-        150.0,
-        52.0,
-        0.5
-    )
-
-    n_surcos = int(
-        st.number_input(
-            "Surcos en la foto",
-            2,
-            6,
-            2,
-            1
-        )
-    )
-
-    objetivo = st.number_input(
-        "Densidad objetivo (pl/ha, opcional)",
-        0,
-        300000,
-        0,
-        1000
-    )
-
+    distancia_surco_cm = st.number_input("Distancia entre surcos (cm)", 10.0, 150.0, 52.0, 0.5)
+    n_surcos = int(st.number_input("Surcos en la foto", 2, 6, 2, 1))
+    objetivo = st.number_input("Densidad objetivo (pl/ha, opcional)", 0, 300000, 0, 1000)
     st.header("Ajustes")
-
-    mostrar_detecciones = st.toggle(
-        "👁 Mostrar detecciones",
-        value=True
-    )
-
-    sensibilidad = int(
-        st.slider(
-            "Sensibilidad de detección",
-            15,
-            60,
-            35,
-            help="Más bajo detecta más verde (más plantas, más falsos). Más alto es más exigente."
-        )
-    )
-
-    inclinada = st.checkbox(
-        "Fotos inclinadas (corregir perspectiva)",
-        False,
-        help="Inclina las líneas de surco siguiendo las plantas y corrige la escala. Con las fotos derechas, dejalo apagado."
-    )
-
-    largo_real = st.number_input(
-        "Largo real de la foto (cm, opcional)",
-        0,
-        500,
-        0,
-        1,
-        help="Si sabés cuántos cm de surco entran en tus fotos, cargalo aquí."
-    )
+    sensibilidad = int(st.slider("Sensibilidad de detección", 15, 60, 35,
+                                 help="Más bajo detecta más verde (más plantas, más falsos). Más alto es más exigente."))
+    inclinada = st.checkbox("Fotos inclinadas (corregir perspectiva)", False,
+                            help="Inclina las líneas de surco siguiendo las plantas y corrige la escala. "
+                                 "Con las fotos derechas, dejalo apagado.")
+    largo_real = st.number_input("Largo real de la foto (cm, opcional)", 0, 500, 0, 1,
+                                 help="Si sabés cuántos cm de surco entran en tus fotos (medido una vez con cinta, "
+                                      "a la altura a la que sacás siempre), cargalo y la densidad sale exacta. "
+                                      "Se aplica a todas las muestras.")
 
 archivos = st.file_uploader("Subí las fotos (una por muestra)", type=["jpg", "jpeg", "png"],
                             accept_multiple_files=True)
@@ -185,53 +138,13 @@ def analizar(i, archivo):
     activas = [p for k, p in enumerate(todas) if k not in quitadas]
     m = {"fid": fid, "nombre": archivo.name, "img": img, "h": h, "w": w, "ids": ids_validos, "qkey": qkey,
          "surcos": None, "tot": None, "pil": None}
-        if len(activas) >= 2:
-
-        surcos, tot = pl.calcular(
-            activas,
-            lineas,
-            h,
-            w,
-            float(distancia_surco_cm),
-            float(largo_real)
-            if largo_real > 0
-            else None
-        )
-
-        if mostrar_detecciones:
-
-            out = pl.dibujar(
-                img,
-                todas,
-                lineas,
-                surcos,
-                quitadas
-            )
-
-        else:
-
-            out = img.copy()
-
-        m.update(
-            surcos=surcos,
-            tot=tot,
-            pil=Image.fromarray(
-                cv2.cvtColor(
-                    out,
-                    cv2.COLOR_BGR2RGB
-                )
-            )
-        )
-
+    if len(activas) >= 2:
+        surcos, tot = pl.calcular(activas, lineas, h, w, float(distancia_surco_cm),
+                                  float(largo_real) if largo_real > 0 else None)
+        out = pl.dibujar(img, todas, lineas, surcos, quitadas)
+        m.update(surcos=surcos, tot=tot, pil=Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB)))
     else:
-
-        m["pil"] = Image.fromarray(
-            cv2.cvtColor(
-                img,
-                cv2.COLOR_BGR2RGB
-            )
-        )
-
+        m["pil"] = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     return m
 
 
