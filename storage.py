@@ -30,7 +30,7 @@ import cv2
 import numpy as np
 
 ROOT = Path("data")
-CFG_DEFAULT = {"entre_surcos": 52.0, "n_surcos": 2, "objetivo": 0}
+CFG_DEFAULT = {"entre_surcos": 52.5, "n_surcos": 2, "objetivo": 0}
 
 _PULLED = False
 _ERRORES = []
@@ -257,6 +257,20 @@ def guardar_cfg(establecimiento, lote, cfg):
 def cfg_lote(establecimiento, lote):
     est = cargar_estructura()
     return {**CFG_DEFAULT, **est.get(establecimiento, {}).get(lote, {})}
+
+
+def listar_contratistas():
+    sincronizar_inicio()
+    return sorted({str(c) for c in _leer_json(ROOT / "contratistas.json", [])}, key=str.lower)
+
+
+def agregar_contratista(nombre):
+    nombre = " ".join(nombre.split())
+    actuales = listar_contratistas()
+    if not nombre or nombre.lower() in (c.lower() for c in actuales):
+        return False
+    _escribir_json(ROOT / "contratistas.json", sorted(actuales + [nombre], key=str.lower))
+    return True
 
 
 def leer_ultimo():

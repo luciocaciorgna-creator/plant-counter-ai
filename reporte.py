@@ -145,7 +145,8 @@ def generar_pdf(est, lote, params, filas, prom, muestras, incluir_original=False
     S = []
 
     # ------------------------------------------------------------------ portada / resumen
-    sie = [f"Híbrido: {params['hibrido']}" if params.get("hibrido") else None,
+    sie = [f"Contratista: {params['contratista']}" if params.get("contratista") else None,
+           f"Híbrido: {params['hibrido']}" if params.get("hibrido") else None,
            f"Siembra: {params['siembra']}" if params.get("siembra") else None,
            f"Semillas sembradas: {params['semillas']:,} /ha".replace(",", ".") if params.get("semillas") else None]
     sie = [x for x in sie if x]

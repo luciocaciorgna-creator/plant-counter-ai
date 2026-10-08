@@ -123,7 +123,22 @@ tiene_amb = sb.checkbox("El lote tiene ambientes", int(cfg.get("ambientes", 1)) 
                              "los resultados se promedian por ambiente y en general.")
 n_amb = int(sb.number_input("Cantidad de ambientes", 2, 12, max(2, int(cfg.get("ambientes", 2))), 1,
                             key=pref + "namb")) if tiene_amb else 1
-with sb.expander("🌽 Siembra (fecha, híbrido, semillas)"):
+with sb.expander("🌽 Siembra (fecha, híbrido, contratista, semillas)"):
+    kc = pref + "contr"
+    if f"_next_{kc}" in st.session_state:  # contratista recién agregado
+        st.session_state[kc] = st.session_state.pop(f"_next_{kc}")
+    contr_actual = cfg.get("contratista", "") or "-"
+    opciones_c = ["-"] + sto.listar_contratistas()
+    if contr_actual not in opciones_c:
+        opciones_c.append(contr_actual)
+    if st.session_state.get(kc) not in opciones_c:
+        st.session_state.pop(kc, None)
+    contratista = st.selectbox("Contratista", opciones_c, index=opciones_c.index(contr_actual), key=kc)
+    with st.form("f_contr", clear_on_submit=True):
+        nuevo_c = st.text_input("Agregar contratista nuevo")
+        if st.form_submit_button("Agregar") and sto.agregar_contratista(nuevo_c):
+            st.session_state[f"_next_{kc}"] = " ".join(nuevo_c.split())
+            st.rerun()
     fecha_siembra = st.date_input("Fecha de siembra", value=a_fecha(cfg.get("siembra")), format="DD/MM/YYYY",
                                   key=pref + "fs", help="Con la fecha, cada muestra muestra los días desde siembra.")
     hibrido = st.text_input("Híbrido", cfg.get("hibrido", ""), key=pref + "hib")
@@ -153,7 +168,8 @@ sens_nueva = int(sb.slider("Sensibilidad para fotos nuevas", 15, 60, 35, key="se
 cfg_actual = {"entre_surcos": float(distancia_surco_cm), "n_surcos": n_surcos, "objetivo": int(objetivo),
               "inclinada": bool(inclinada), "largo_real": int(largo_real), "ambientes": n_amb,
               "siembra": fecha_siembra.isoformat() if isinstance(fecha_siembra, date) else "",
-              "hibrido": hibrido.strip(), "semillas": semillas, "semillas_amb": sem_amb}
+              "hibrido": hibrido.strip(), "contratista": "" if contratista == "-" else contratista,
+              "semillas": semillas, "semillas_amb": sem_amb}
 if any(cfg.get(k) != v for k, v in cfg_actual.items()):
     sto.guardar_cfg(est, lote, cfg_actual)
 
@@ -386,6 +402,8 @@ else:
         extra.append(("Días desde siembra", f"{min(dds_v)}" if min(dds_v) == max(dds_v) else f"{min(dds_v)} a {max(dds_v)}"))
     if hibrido.strip():
         extra.append(("Híbrido", hibrido.strip()))
+    if contratista != "-":
+        extra.append(("Contratista", contratista))
     if extra:
         for col_, (lab_, val_) in zip(st.columns(len(extra)), extra):
             col_.metric(lab_, val_)
@@ -470,7 +488,8 @@ else:
             "Tamaño CV (%)": round(p_["tam"], 1), "Tam": pl.semaforo(p_["tam"], 15, 50),
             "Emergencia (%)": round(p_["emerg"], 1)} for p_ in por_amb])], ignore_index=True)
         csv = csv[[c_ for c_ in csv.columns if c_ in tabla.columns]]
-    csv = csv.assign(Establecimiento=est, Lote=lote, Entre_surcos_cm=distancia_surco_cm)
+    csv = csv.assign(Establecimiento=est, Lote=lote, Entre_surcos_cm=distancia_surco_cm,
+                     Contratista="" if contratista == "-" else contratista)
     st.download_button("Descargar resumen (CSV)", csv.to_csv(index=False).encode("utf-8"),
                        f"stand_{lote}.csv", "text/csv")
 
@@ -478,7 +497,7 @@ else:
     st.subheader("📄 Informe en PDF")
     inc_orig = st.checkbox("Incluir también la foto original (al lado de la procesada)", False, key="pdf_orig")
     firma = (est, lote, inc_orig, float(distancia_surco_cm), n_surcos, int(objetivo), int(largo_real), n_amb,
-             fecha_siembra, hibrido.strip(), semillas, tuple(sorted(sem_amb.items())),
+             fecha_siembra, hibrido.strip(), contratista, semillas, tuple(sorted(sem_amb.items())),
              tuple((m["dds"], m["estadio"], m["fid"], m["tot"]["plantas"], round(m["tot"]["pl_ha"]), tuple(m["quitar"]),
                     tuple(map(tuple, m["agregadas"])), m["sens"], m["guardada"], m["amb"]) for m in ok))
     if st.button("Generar PDF del lote"):
@@ -502,7 +521,7 @@ else:
             prom_pdf = {**prom, "pl_m": float(prom["pl_m"]), "pl_ha": float(prom["pl_ha"])}
             st.session_state["pdf"] = (firma, rp.generar_pdf(
                 est, lote, {"entre_surcos": float(distancia_surco_cm), "n_surcos": n_surcos,
-                            "objetivo": int(objetivo), "largo_real": int(largo_real), "hibrido": hibrido.strip(),
+                            "objetivo": int(objetivo), "largo_real": int(largo_real), "hibrido": hibrido.strip(), "contratista": "" if contratista == "-" else contratista,
                             "siembra": fmt_f(fecha_siembra) if isinstance(fecha_siembra, date) else None,
                             "semillas": semillas},
                 filas_pdf, prom_pdf, mu_pdf, inc_orig, por_ambiente=(por_amb + [general]) if por_amb else None))
