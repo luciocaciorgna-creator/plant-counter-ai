@@ -190,6 +190,12 @@ def calcular(plantas, lineas, h, w, entre_surcos_cm, largo_real_cm=None):
         "desvio_cm": float(np.mean([s["desvio_cm"] for s in v if not math.isnan(s["desvio_cm"])] or [float("nan")])),
     }
     tot["cv"] = tot["desvio_cm"] / tot["media_cm"] * 100 if v else float("nan")
+    # variación de tamaño: CV del tamaño de los recuadros (lado del cuadrado de igual área).
+    # Las plantas agregadas a mano no tienen recuadro y no cuentan.
+    tam = [math.sqrt(max(1, p["box"][2] - p["box"][0]) * max(1, p["box"][3] - p["box"][1]))
+           for p in plantas if p.get("box")]
+    tot["tam_n"] = len(tam)
+    tot["tam_cv"] = float(np.std(tam, ddof=1) / np.mean(tam) * 100) if len(tam) >= 3 else float("nan")
     todas = [d for s in surcos for d in s["dist_cm"]]
     mm = float(np.mean(todas)) if todas else float("nan")
     tot["dobles"] = sum(d < 0.5 * mm for d in todas) if todas else 0

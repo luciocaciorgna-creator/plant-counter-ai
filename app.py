@@ -1,6 +1,7 @@
 import hashlib
 import math
 import time
+from datetime import date, datetime, timedelta, timezone
 
 import cv2
 import numpy as np
@@ -26,6 +27,45 @@ def etq(a):
 
 def _cambiar_amb(est_, lote_, sid, key):
     sto.actualizar_muestra(est_, lote_, sid, {"ambiente": int(st.session_state[key])})
+
+
+ESTADIOS = ["-", "VE"] + [f"V{i}" for i in range(1, 11)]
+
+
+def hoy_ba():
+    return (datetime.now(timezone.utc) - timedelta(hours=3)).date()
+
+
+def a_fecha(txt):
+    try:
+        return date.fromisoformat(txt)
+    except (TypeError, ValueError):
+        return None
+
+
+def fecha_de_meta(meta):
+    d = a_fecha(meta.get("fmuestreo"))
+    if d:
+        return d
+    try:  # muestras viejas: usa el día en que se cargaron
+        return datetime.strptime(meta.get("fecha", "")[:10], "%d/%m/%Y").date()
+    except ValueError:
+        return None
+
+
+def fmt_f(d):
+    return d.strftime("%d/%m/%Y") if d else "-"
+
+
+def nan(v):
+    return v is None or (isinstance(v, float) and math.isnan(v))
+
+
+def _guardar_campo(est_, lote_, sid, key, campo):
+    v = st.session_state[key]
+    if campo == "fmuestreo":
+        v = v.isoformat() if isinstance(v, date) else ""
+    sto.actualizar_muestra(est_, lote_, sid, {campo: v})
 
 
 # Al arrancar (o después de un reinicio de Streamlit Cloud) trae lo guardado en GitHub, si está configurado.
@@ -83,6 +123,20 @@ tiene_amb = sb.checkbox("El lote tiene ambientes", int(cfg.get("ambientes", 1)) 
                              "los resultados se promedian por ambiente y en general.")
 n_amb = int(sb.number_input("Cantidad de ambientes", 2, 12, max(2, int(cfg.get("ambientes", 2))), 1,
                             key=pref + "namb")) if tiene_amb else 1
+with sb.expander("🌽 Siembra (fecha, híbrido, semillas)"):
+    fecha_siembra = st.date_input("Fecha de siembra", value=a_fecha(cfg.get("siembra")), format="DD/MM/YYYY",
+                                  key=pref + "fs", help="Con la fecha, cada muestra muestra los días desde siembra.")
+    hibrido = st.text_input("Híbrido", cfg.get("hibrido", ""), key=pref + "hib")
+    semillas = int(st.number_input("Semillas sembradas (semillas/ha)", 0, 200000, int(cfg.get("semillas", 0)), 1000,
+                                   key=pref + "sem",
+                                   help="Con este dato la app calcula la emergencia: plantas logradas / semillas sembradas."))
+    sem_amb = {}
+    if n_amb > 1:
+        st.caption("Si sembraste distinta densidad en cada ambiente, cargala acá (0 = usa la general).")
+        for a_ in range(1, n_amb + 1):
+            sem_amb[str(a_)] = int(st.number_input(f"Semillas ambiente {a_} (semillas/ha)", 0, 200000,
+                                                   int((cfg.get("semillas_amb") or {}).get(str(a_), 0)), 1000,
+                                                   key=f"{pref}sema{a_}"))
 sb.header("Ajustes")
 inclinada = sb.checkbox("Fotos inclinadas (corregir perspectiva)", bool(cfg.get("inclinada", False)),
                         key=pref + "inc",
@@ -97,9 +151,16 @@ sens_nueva = int(sb.slider("Sensibilidad para fotos nuevas", 15, 60, 35, key="se
                            help="Más bajo detecta más verde (más plantas, más falsos). Cada foto guardada "
                                 "conserva la sensibilidad con la que se cargó."))
 cfg_actual = {"entre_surcos": float(distancia_surco_cm), "n_surcos": n_surcos, "objetivo": int(objetivo),
-              "inclinada": bool(inclinada), "largo_real": int(largo_real), "ambientes": n_amb}
+              "inclinada": bool(inclinada), "largo_real": int(largo_real), "ambientes": n_amb,
+              "siembra": fecha_siembra.isoformat() if isinstance(fecha_siembra, date) else "",
+              "hibrido": hibrido.strip(), "semillas": semillas, "semillas_amb": sem_amb}
 if any(cfg.get(k) != v for k, v in cfg_actual.items()):
     sto.guardar_cfg(est, lote, cfg_actual)
+
+def semillas_de(a):
+    """Semillas/ha sembradas para un ambiente (o la general). 0 = sin dato."""
+    return (sem_amb.get(str(a), 0) if a else 0) or semillas
+
 
 # ----------------------------------------------------------------------- respaldo
 _alm = sto.estado_almacenamiento()
@@ -207,7 +268,12 @@ def analizar(f):
         amb = amb_valido(f["meta"].get("ambiente", 0))
     else:
         amb = amb_valido(st.session_state.get(f"amb_{fid}", st.session_state.get("ult_amb", 1)))
-    m = {**f, "amb": amb, "img": img, "h": h, "w": w, "ids": ids_validos, "qkey": qkey, "akey": akey,
+    if f["guardada"]:
+        fmu, estadio = fecha_de_meta(f["meta"]), f["meta"].get("estadio", "-")
+    else:
+        fmu, estadio = st.session_state.get("f_nueva", hoy_ba()), st.session_state.get("e_nueva", "-")
+    dds = (fmu - fecha_siembra).days if isinstance(fmu, date) and isinstance(fecha_siembra, date) else None
+    m = {**f, "amb": amb, "fmu": fmu, "estadio": estadio, "dds": dds, "img": img, "h": h, "w": w, "ids": ids_validos, "qkey": qkey, "akey": akey,
          "quitar": sorted(quitar_ids), "agregadas": agregadas, "ndet": len(detectadas), "surcos": None, "tot": None,
          "draw": (todas, lineas, quitadas)}
     if len(activas) >= 2:
@@ -232,6 +298,9 @@ ok = [m for m in muestras if m["tot"]]
 
 if nuevas:
     st.warning(f"{len(nuevas)} foto(s) todavía sin guardar. Corregí las plantas si hace falta y guardalas en el lote.")
+    cn1, cn2 = st.columns(2)
+    cn1.date_input("Fecha de muestreo (de estas fotos)", value=hoy_ba(), format="DD/MM/YYYY", key="f_nueva")
+    cn2.selectbox("Estadio (de estas fotos)", ESTADIOS, key="e_nueva")
     if n_amb > 1:
         st.caption("Elegí el ambiente de cada foto antes de guardarla.")
         for m_ in nuevas:
@@ -244,6 +313,7 @@ if nuevas:
             for m in nuevas:
                 sto.guardar_muestra(est, lote, m["datos"], {
                     "nombre": m["nombre"], "sens": m["sens"], "quitar": m["quitar"], "ambiente": m["amb"],
+                    "fmuestreo": m["fmu"].isoformat() if isinstance(m["fmu"], date) else "", "estadio": m["estadio"],
                     "agregadas": m["agregadas"], "fecha": time.strftime("%d/%m/%Y %H:%M")})
         st.session_state["up_n"] += 1
         st.rerun()
@@ -260,13 +330,26 @@ else:
             continue
         filas.append({
             "Muestra": f"{k + 1}. {m['nombre']}" + ("" if m["guardada"] else " (sin guardar)"), "_amb": m["amb"],
+            "DDS": m["dds"], "Estadio": "" if m["estadio"] in (None, "-") else m["estadio"],
             "Plantas": t["plantas"], "m de surco": round(t["largo_cm"] * n_surcos / 100, 1),
             "pl/m": round(t["pl_m"], 2), "pl/ha": round(t["pl_ha"]),
             "Media (cm)": round(t["media_cm"], 1), "Desvío (cm)": round(t["desvio_cm"], 1),
             "CV (%)": round(t["cv"], 1), "CV": pl.semaforo(t["cv"], 22, 30),
+            "Tamaño CV (%)": round(t["tam_cv"], 1) if not nan(t["tam_cv"]) else float("nan"),
+            "Tam": pl.semaforo(t["tam_cv"], 15, 50),
+            "Emergencia (%)": round(t["pl_ha"] / semillas_de(m["amb"]) * 100, 1) if semillas_de(m["amb"]) else float("nan"),
         })
     df_all = pd.DataFrame(filas)
-    df = df_all.drop(columns="_amb")
+    ocultar = ["_amb"]
+    if not isinstance(fecha_siembra, date):
+        ocultar.append("DDS")
+    if not df_all["Estadio"].any():
+        ocultar.append("Estadio")
+    if df_all["Tamaño CV (%)"].isna().all():
+        ocultar += ["Tamaño CV (%)", "Tam"]
+    if df_all["Emergencia (%)"].isna().all():
+        ocultar.append("Emergencia (%)")
+    df = df_all.drop(columns=ocultar)
     if n_amb > 1:
         df.insert(1, "Ambiente", [etq(a) for a in df_all["_amb"]])
 
@@ -274,6 +357,7 @@ else:
         p = {"pl_m": d["pl/m"].mean(), "pl_ha": d["pl/ha"].mean(), "media": d["Media (cm)"].mean(),
              "desvio": d["Desvío (cm)"].mean(), "cv": d["CV (%)"].mean(),
              "plantas": int(d["Plantas"].sum()), "metros": d["m de surco"].sum(),
+             "tam": d["Tamaño CV (%)"].mean(), "emerg": d["Emergencia (%)"].mean(),
              "ent_sd": d["pl/ha"].std(ddof=1) if len(d) > 1 else float("nan")}
         p["ent_cv"] = p["ent_sd"] / p["pl_ha"] * 100 if len(d) > 1 else float("nan")
         return p
@@ -292,6 +376,19 @@ else:
     d2.metric("Muestras", len(df))
     d3.metric("Metros de surco medidos", f"{prom['metros']:.1f} m")
     d4.metric("Plantas contadas", prom["plantas"])
+    extra = []
+    if not nan(prom["tam"]):
+        extra.append(("Variación de tamaño", f"{prom['tam']:.1f} % {pl.semaforo(prom['tam'], 15, 50)}"))
+    if not nan(prom["emerg"]):
+        extra.append(("Emergencia (plantas / semillas)", f"{prom['emerg']:.1f} %"))
+    dds_v = [m_["dds"] for m_ in ok if m_["dds"] is not None]
+    if dds_v:
+        extra.append(("Días desde siembra", f"{min(dds_v)}" if min(dds_v) == max(dds_v) else f"{min(dds_v)} a {max(dds_v)}"))
+    if hibrido.strip():
+        extra.append(("Híbrido", hibrido.strip()))
+    if extra:
+        for col_, (lab_, val_) in zip(st.columns(len(extra)), extra):
+            col_.metric(lab_, val_)
     if objetivo > 0:
         dev = (prom["pl_ha"] - objetivo) / objetivo * 100
         e1, e2 = st.columns(2)
@@ -309,11 +406,11 @@ else:
             pa = calc_prom(sub)
             por_amb.append({"nombre": etq(a), "n": len(sub), "plantas": pa["plantas"], "metros": pa["metros"],
                             "pl_m": pa["pl_m"], "pl_ha": pa["pl_ha"], "media": pa["media"],
-                            "desvio": pa["desvio"], "cv": pa["cv"],
+                            "desvio": pa["desvio"], "cv": pa["cv"], "tam": pa["tam"], "emerg": pa["emerg"],
                             "dev": (pa["pl_ha"] - objetivo) / objetivo * 100 if objetivo > 0 else None})
         general = {"nombre": "GENERAL DEL LOTE", "n": len(df_all), "plantas": prom["plantas"],
                    "metros": prom["metros"], "pl_m": prom["pl_m"], "pl_ha": prom["pl_ha"], "media": prom["media"],
-                   "desvio": prom["desvio"], "cv": prom["cv"],
+                   "desvio": prom["desvio"], "cv": prom["cv"], "tam": prom["tam"], "emerg": prom["emerg"],
                    "dev": (prom["pl_ha"] - objetivo) / objetivo * 100 if objetivo > 0 else None}
         filas_amb = []
         for p_ in por_amb + [general]:
@@ -321,6 +418,11 @@ else:
                   "m de surco": round(p_["metros"], 1), "pl/m": round(p_["pl_m"], 2), "pl/ha": round(p_["pl_ha"]),
                   "Media (cm)": round(p_["media"], 1), "Desvío (cm)": round(p_["desvio"], 1),
                   "CV (%)": round(p_["cv"], 1), "CV": pl.semaforo(p_["cv"], 22, 30)}
+            if "Tamaño CV (%)" in df.columns:
+                fa["Tamaño CV (%)"] = round(p_["tam"], 1)
+                fa["Tam"] = pl.semaforo(p_["tam"], 15, 50)
+            if "Emergencia (%)" in df.columns:
+                fa["Emergencia (%)"] = round(p_["emerg"], 1)
             if objetivo > 0:
                 fa["Desv. pobl. (%)"] = round(p_["dev"], 1)
                 fa["Desv."] = pl.semaforo(abs(p_["dev"]), 5, 10)
@@ -338,9 +440,13 @@ else:
     fila_prom = {"Muestra": "PROMEDIO", "Plantas": prom["plantas"], "m de surco": round(prom["metros"], 1),
                  "pl/m": round(prom["pl_m"], 2), "pl/ha": round(prom["pl_ha"]),
                  "Media (cm)": round(prom["media"], 1), "Desvío (cm)": round(prom["desvio"], 1),
-                 "CV (%)": round(prom["cv"], 1), "CV": pl.semaforo(prom["cv"], 22, 30)}
+                 "CV (%)": round(prom["cv"], 1), "CV": pl.semaforo(prom["cv"], 22, 30),
+                 "Tamaño CV (%)": round(prom["tam"], 1), "Tam": pl.semaforo(prom["tam"], 15, 50),
+                 "Emergencia (%)": round(prom["emerg"], 1), "Estadio": "",
+                 "DDS": round(df_all["DDS"].mean()) if df_all["DDS"].notna().any() else None}
     if n_amb > 1:
         fila_prom["Ambiente"] = "Todos"
+    fila_prom = {k_: v_ for k_, v_ in fila_prom.items() if k_ in df.columns}
     st.subheader("Muestras")
     tabla = pd.concat([df, pd.DataFrame([fila_prom])], ignore_index=True)
     st.dataframe(tabla, hide_index=True)
@@ -350,14 +456,20 @@ else:
     if prom["metros"] < 10:
         st.caption("SIMA recomienda cerca de 10 m de surco por punto de muestreo: con menos, "
                    "el promedio es poco representativo.")
+    if "Tamaño CV (%)" in df.columns:
+        st.caption("Variación de tamaño = coeficiente de variación del tamaño de los recuadros de las plantas, con el "
+                   "semáforo de SIMA (verde hasta 15 %, amarillo hasta 50 %). SIMA no publica la fórmula exacta, "
+                   "así que puede no coincidir al decimal. Las plantas agregadas a mano no cuentan.")
     csv = tabla
     if por_amb:
         csv = pd.concat([tabla, pd.DataFrame([{
             "Muestra": "PROMEDIO " + p_["nombre"], "Ambiente": p_["nombre"], "Plantas": p_["plantas"],
             "m de surco": round(p_["metros"], 1), "pl/m": round(p_["pl_m"], 2), "pl/ha": round(p_["pl_ha"]),
             "Media (cm)": round(p_["media"], 1), "Desvío (cm)": round(p_["desvio"], 1),
-            "CV (%)": round(p_["cv"], 1), "CV": pl.semaforo(p_["cv"], 22, 30)} for p_ in por_amb])],
-            ignore_index=True)
+            "CV (%)": round(p_["cv"], 1), "CV": pl.semaforo(p_["cv"], 22, 30),
+            "Tamaño CV (%)": round(p_["tam"], 1), "Tam": pl.semaforo(p_["tam"], 15, 50),
+            "Emergencia (%)": round(p_["emerg"], 1)} for p_ in por_amb])], ignore_index=True)
+        csv = csv[[c_ for c_ in csv.columns if c_ in tabla.columns]]
     csv = csv.assign(Establecimiento=est, Lote=lote, Entre_surcos_cm=distancia_surco_cm)
     st.download_button("Descargar resumen (CSV)", csv.to_csv(index=False).encode("utf-8"),
                        f"stand_{lote}.csv", "text/csv")
@@ -366,26 +478,33 @@ else:
     st.subheader("📄 Informe en PDF")
     inc_orig = st.checkbox("Incluir también la foto original (al lado de la procesada)", False, key="pdf_orig")
     firma = (est, lote, inc_orig, float(distancia_surco_cm), n_surcos, int(objetivo), int(largo_real), n_amb,
-             tuple((m["fid"], m["tot"]["plantas"], round(m["tot"]["pl_ha"]), tuple(m["quitar"]),
+             fecha_siembra, hibrido.strip(), semillas, tuple(sorted(sem_amb.items())),
+             tuple((m["dds"], m["estadio"], m["fid"], m["tot"]["plantas"], round(m["tot"]["pl_ha"]), tuple(m["quitar"]),
                     tuple(map(tuple, m["agregadas"])), m["sens"], m["guardada"], m["amb"]) for m in ok))
     if st.button("Generar PDF del lote"):
         with st.spinner("Armando el PDF..."):
             filas_pdf = [{"nombre": r["Muestra"].split(". ", 1)[-1], "plantas": r["Plantas"],
                           "metros": r["m de surco"], "pl_m": r["pl/m"], "pl_ha": r["pl/ha"],
                           "media": r["Media (cm)"], "desvio": r["Desvío (cm)"], "cv": r["CV (%)"],
-                          "ambiente": etq(r["_amb"]) if n_amb > 1 else None}
+                          "ambiente": etq(r["_amb"]) if n_amb > 1 else None, "tam": r["Tamaño CV (%)"],
+                          "emerg": r["Emergencia (%)"], "dds": r["DDS"], "estadio": r["Estadio"]}
                          for r in filas]
             mu_pdf = []
             for m_ in ok:
                 todas_, lineas_, quit_ = m_["draw"]
                 mu_pdf.append({"nombre": m_["nombre"], "fecha": (m_["meta"] or {}).get("fecha"), "tot": m_["tot"],
                                "surcos": m_["surcos"], "sens": m_["sens"], "orig": m_["img"],
-                               "ambiente": etq(m_["amb"]) if n_amb > 1 else None,
+                               "ambiente": etq(m_["amb"]) if n_amb > 1 else None, "dds": m_["dds"],
+                               "estadio": "" if m_["estadio"] in (None, "-") else m_["estadio"],
+                               "fmu": fmt_f(m_["fmu"]),
+                               "emerg": (m_["tot"]["pl_ha"] / semillas_de(m_["amb"]) * 100) if semillas_de(m_["amb"]) else None,
                                "proc": pl.dibujar(m_["img"], todas_, lineas_, m_["surcos"], quit_)})
             prom_pdf = {**prom, "pl_m": float(prom["pl_m"]), "pl_ha": float(prom["pl_ha"])}
             st.session_state["pdf"] = (firma, rp.generar_pdf(
                 est, lote, {"entre_surcos": float(distancia_surco_cm), "n_surcos": n_surcos,
-                            "objetivo": int(objetivo), "largo_real": int(largo_real)},
+                            "objetivo": int(objetivo), "largo_real": int(largo_real), "hibrido": hibrido.strip(),
+                            "siembra": fmt_f(fecha_siembra) if isinstance(fecha_siembra, date) else None,
+                            "semillas": semillas},
                 filas_pdf, prom_pdf, mu_pdf, inc_orig, por_ambiente=(por_amb + [general]) if por_amb else None))
     if "pdf" in st.session_state:
         firma_pdf, pdf_bytes = st.session_state["pdf"]
@@ -416,6 +535,20 @@ if n_amb > 1:
                      on_change=_cambiar_amb, args=(est, lote, m["sid"], kamb))
     else:
         st.caption(f"{etq(m['amb'])} (se elige arriba, antes de guardar la foto).")
+cf1, cf2 = st.columns(2)
+if m["guardada"]:
+    kf, ke = f"fm_{fid}", f"es_{fid}"
+    if not isinstance(st.session_state.get(kf), date):
+        st.session_state[kf] = m["fmu"] or hoy_ba()
+    if st.session_state.get(ke) not in ESTADIOS:
+        st.session_state[ke] = m["estadio"] if m["estadio"] in ESTADIOS else "-"
+    cf1.date_input("Fecha de muestreo", format="DD/MM/YYYY", key=kf, on_change=_guardar_campo,
+                   args=(est, lote, m["sid"], kf, "fmuestreo"))
+    cf2.selectbox("Estadio", ESTADIOS, key=ke, on_change=_guardar_campo, args=(est, lote, m["sid"], ke, "estadio"))
+else:
+    cf1.caption(f"Fecha de muestreo: {fmt_f(m['fmu'])} · Estadio: {m['estadio']} (se eligen arriba, antes de guardar).")
+if m["dds"] is not None:
+    st.caption(f"{m['dds']} días desde la siembra ({fmt_f(fecha_siembra)}).")
 todas, lineas, quitadas = m["draw"]
 surcos_dib = m["surcos"] or []
 
@@ -487,6 +620,10 @@ with col_res:
         b.metric("Desvío", f"{t['desvio_cm']:.1f} cm")
         a.metric("CV", f"{t['cv']:.1f} % {pl.semaforo(t['cv'], 22, 30)}")
         b.metric("Plantas", t["plantas"])
+        if not nan(t["tam_cv"]):
+            a.metric("Variación de tamaño", f"{t['tam_cv']:.1f} % {pl.semaforo(t['tam_cv'], 15, 50)}")
+        if semillas_de(m["amb"]):
+            b.metric("Emergencia", f"{t['pl_ha'] / semillas_de(m['amb']) * 100:.1f} %")
         st.caption(f"Largo de surco en la foto: {t['largo_cm']:.0f} cm"
                    + (f" (cargado por vos; la app estimaba {t['largo_estimado_cm']:.0f} cm)"
                       if largo_real > 0 else " (estimado)")
