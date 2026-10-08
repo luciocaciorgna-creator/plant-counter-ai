@@ -335,8 +335,8 @@ else:
             "pl/m": round(t["pl_m"], 2), "pl/ha": round(t["pl_ha"]),
             "Media (cm)": round(t["media_cm"], 1), "Desvío (cm)": round(t["desvio_cm"], 1),
             "CV (%)": round(t["cv"], 1), "CV": pl.semaforo(t["cv"], 22, 30),
-            "Tamaño CV (%)": round(t["tam_cv"], 1) if not nan(t["tam_cv"]) else float("nan"),
-            "Tam": pl.semaforo(t["tam_cv"], 15, 50),
+            "Tamaño CV (%)": round(t.get("tam_cv", float("nan")), 1) if not nan(t.get("tam_cv", float("nan"))) else float("nan"),
+            "Tam": pl.semaforo(t.get("tam_cv", float("nan")), 15, 50),
             "Emergencia (%)": round(t["pl_ha"] / semillas_de(m["amb"]) * 100, 1) if semillas_de(m["amb"]) else float("nan"),
         })
     df_all = pd.DataFrame(filas)
@@ -620,7 +620,7 @@ with col_res:
         b.metric("Desvío", f"{t['desvio_cm']:.1f} cm")
         a.metric("CV", f"{t['cv']:.1f} % {pl.semaforo(t['cv'], 22, 30)}")
         b.metric("Plantas", t["plantas"])
-        if not nan(t["tam_cv"]):
+        if not nan(t.get("tam_cv", float("nan"))):
             a.metric("Variación de tamaño", f"{t['tam_cv']:.1f} % {pl.semaforo(t['tam_cv'], 15, 50)}")
         if semillas_de(m["amb"]):
             b.metric("Emergencia", f"{t['pl_ha'] / semillas_de(m['amb']) * 100:.1f} %")
