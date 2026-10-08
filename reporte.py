@@ -63,13 +63,15 @@ def _tabla(filas, anchos, header=True, estilos=()):
     return t
 
 
-def generar_pdf(est, lote, params, filas, prom, muestras, incluir_original=False):
+def generar_pdf(est, lote, params, filas, prom, muestras, incluir_original=False, por_ambiente=None):
     """Devuelve los bytes del PDF.
 
     params:   dict con entre_surcos, n_surcos, objetivo, largo_real
     filas:    lista de dicts (una por muestra) con nombre, plantas, metros, pl_m, pl_ha, media, desvio, cv
     prom:     dict con los mismos campos promediados (+ ent_sd, ent_cv)
-    muestras: lista de dicts con nombre, fecha, tot, surcos, proc (BGR), orig (BGR), sens
+    muestras: lista de dicts con nombre, fecha, tot, surcos, proc (BGR), orig (BGR), sens, ambiente
+    por_ambiente: opcional, lista de dicts (nombre, n, plantas, metros, pl_m, pl_ha, media, desvio, cv, dev)
+              con una fila por ambiente y la última con el general del lote
     """
     ss = getSampleStyleSheet()
     h1 = ParagraphStyle("h1", parent=ss["Title"], fontName="Helvetica-Bold", fontSize=20, textColor=OSCURO,
@@ -132,25 +134,60 @@ def generar_pdf(est, lote, params, filas, prom, muestras, incluir_original=False
         S.append(Paragraph("Se midieron menos de 10 m de surco: el promedio es poco representativo "
                            "(se recomiendan cerca de 10 m por punto de muestreo).", peq))
 
+    if por_ambiente:
+        S.append(Paragraph("Promedio por ambiente", h2))
+        cab_a = ["Ambiente", "Muestras", "Plantas", "m surco", "pl/m", "pl/ha", "Media (cm)", "Desvío (cm)", "CV (%)"]
+        if obj:
+            cab_a.append("Desv. pobl.")
+        da = [cab_a]
+        ea = [("ALIGN", (0, 0), (0, -1), "LEFT")]
+        for j, p in enumerate(por_ambiente, 1):
+            fila_a = [_t(p["nombre"]), p["n"], p["plantas"], _fmt(p["metros"]), _fmt(p["pl_m"], 2),
+                      _fmt(p["pl_ha"], 0, True), _fmt(p["media"]), _fmt(p["desvio"]), _fmt(p["cv"])]
+            cc = _color(p["cv"], 22, 30)
+            if cc:
+                ea.append(("BACKGROUND", (8, j), (8, j), cc))
+            if obj:
+                fila_a.append("-" if p.get("dev") is None else f"{p['dev']:+.1f} %")
+                if p.get("dev") is not None:
+                    cd = _color(abs(p["dev"]), 5, 10)
+                    if cd:
+                        ea.append(("BACKGROUND", (9, j), (9, j), cd))
+            da.append(fila_a)
+        ult = len(da) - 1
+        ea += [("BACKGROUND", (0, ult), (0, ult), GRIS), ("FONTNAME", (0, ult), (-1, ult), "Helvetica-Bold")]
+        ncol = len(cab_a)
+        S.append(_tabla(da, [W * 0.19] + [W * 0.81 / (ncol - 1)] * (ncol - 1), estilos=ea))
+        S.append(Spacer(1, 3))
+        S.append(Paragraph("Cada ambiente es el promedio simple de sus muestras; el general del lote es el promedio "
+                           "simple de todas las muestras.", peq))
+
     S.append(Paragraph("Detalle por muestra", h2))
-    cab = ["Muestra", "Plantas", "m surco", "pl/m", "pl/ha", "Media (cm)", "Desvío (cm)", "CV (%)"]
+    con_amb = any(f.get("ambiente") for f in filas)
+    cab = ["Muestra"] + (["Ambiente"] if con_amb else []) + ["Plantas", "m surco", "pl/m", "pl/ha", "Media (cm)",
+                                                             "Desvío (cm)", "CV (%)"]
+    ccv = len(cab) - 1
     datos = [cab]
     est_t = []
     for i, f in enumerate(filas, 1):
-        datos.append([_t(f"{i}. {f['nombre']}")[:34], f["plantas"], _fmt(f["metros"]), _fmt(f["pl_m"], 2),
-                      _fmt(f["pl_ha"], 0, True), _fmt(f["media"]), _fmt(f["desvio"]), _fmt(f["cv"])])
+        datos.append([_t(f"{i}. {f['nombre']}")[:34]] + ([_t(f.get("ambiente") or "-")] if con_amb else [])
+                     + [f["plantas"], _fmt(f["metros"]), _fmt(f["pl_m"], 2), _fmt(f["pl_ha"], 0, True),
+                        _fmt(f["media"]), _fmt(f["desvio"]), _fmt(f["cv"])])
         cc = _color(f["cv"], 22, 30)
         if cc:
-            est_t.append(("BACKGROUND", (7, i), (7, i), cc))
+            est_t.append(("BACKGROUND", (ccv, i), (ccv, i), cc))
     n = len(datos)
-    datos.append(["PROMEDIO", prom["plantas"], _fmt(prom["metros"]), _fmt(prom["pl_m"], 2),
-                  _fmt(prom["pl_ha"], 0, True), _fmt(prom["media"]), _fmt(prom["desvio"]), _fmt(prom["cv"])])
+    datos.append(["PROMEDIO"] + (["Todos"] if con_amb else [])
+                 + [prom["plantas"], _fmt(prom["metros"]), _fmt(prom["pl_m"], 2), _fmt(prom["pl_ha"], 0, True),
+                    _fmt(prom["media"]), _fmt(prom["desvio"]), _fmt(prom["cv"])])
     est_t += [("BACKGROUND", (0, n), (-1, n), GRIS), ("FONTNAME", (0, n), (-1, n), "Helvetica-Bold"),
               ("ALIGN", (0, 0), (0, -1), "LEFT")]
     cc = _color(prom["cv"], 22, 30)
     if cc:
-        est_t.append(("BACKGROUND", (7, n), (7, n), cc))
-    S.append(_tabla(datos, [W * 0.28] + [W * 0.72 / 7] * 7, estilos=est_t))
+        est_t.append(("BACKGROUND", (ccv, n), (ccv, n), cc))
+    ncol = len(cab)
+    anchos = ([W * 0.25, W * 0.13] + [W * 0.62 / 6] * 6) if con_amb else ([W * 0.28] + [W * 0.72 / 7] * 7)
+    S.append(_tabla(datos, anchos, estilos=est_t))
     S.append(Spacer(1, 6))
     S.append(Paragraph("Semáforo del CV (variación entre plantas): verde hasta 22 %, amarillo hasta 30 %, rojo más. "
                        "Desviación poblacional: verde hasta 5 %, amarillo hasta 10 %. "
@@ -159,7 +196,7 @@ def generar_pdf(est, lote, params, filas, prom, muestras, incluir_original=False
     # ------------------------------------------------------------------ una página por muestra
     for i, m in enumerate(muestras, 1):
         S.append(PageBreak())
-        S.append(Paragraph(_t(f"Muestra {i}: {m['nombre']}"), h2))
+        S.append(Paragraph(_t(f"Muestra {i}: {m['nombre']}" + (f" - {m['ambiente']}" if m.get("ambiente") else "")), h2))
         if m.get("fecha"):
             S.append(Paragraph(_t(f"Cargada el {m['fecha']}"), peq))
         t = m.get("tot")
